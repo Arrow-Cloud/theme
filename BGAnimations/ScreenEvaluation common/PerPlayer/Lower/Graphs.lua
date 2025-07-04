@@ -76,7 +76,7 @@ else
 		OnCommand=function(self)
 			self:addx(-GraphWidth/2):addy(GraphHeight)
 			-- Lower the opacity otherwise some of the scatter plot points might become hard to see.
-			self:diffusealpha(0.5)
+			self:diffusealpha(0.65)
 		end,
 	}
 end
@@ -112,8 +112,8 @@ af[#af+1] = Def.GraphDisplay{
 			self:addx(offset/2)
 			self:SetWidth(GraphWidth - offset)
 		else
-			local duration = TotalCourseLength()
-			local liveDuration = TotalCourseLengthPlayed()
+			local duration = TotalCourseLength(player)
+			local liveDuration = TotalCourseLengthPlayed(player)
 
 			if liveDuration ~= -1 then
 				self:SetWidth(liveDuration / duration * GraphWidth):x(-GraphWidth/2):horizalign(left)
@@ -152,8 +152,8 @@ if storage.DeathSecond ~= nil then
 	local secondsLeft = seconds - deathSecond
 	
 	if GAMESTATE:IsCourseMode() then
-		local duration = TotalCourseLength()
-		local liveDuration = TotalCourseLengthPlayed()
+		local duration = TotalCourseLength(player)
+		local liveDuration = TotalCourseLengthPlayed(player)
 		graphPercentage = graphPercentage * liveDuration / duration
 	end
 

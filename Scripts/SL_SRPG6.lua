@@ -1,4 +1,4 @@
-SL.SRPG8 = {
+SL.SRPG9 = {
 	Colors = {
 		            ----------+--------------
 		"#666000",  -- Unaff. | Yellow     --
@@ -40,9 +40,9 @@ SL.SRPG8 = {
 		end
 	end,
 	ActivateVisualStyle = function(self)
-		ThemePrefs.Set("VisualStyle", "SRPG8")
+		ThemePrefs.Set("VisualStyle", "SRPG9")
 		ThemePrefs.Set("RainbowMode", false)
-		ThemePrefs.Set("LastActiveEvent", "SRPG8")
+		ThemePrefs.Set("LastActiveEvent", "SRPG9")
 		ThemePrefs.Save()
 
 		MESSAGEMAN:Broadcast("VisualStyleSelected")

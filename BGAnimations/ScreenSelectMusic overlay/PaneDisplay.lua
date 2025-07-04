@@ -251,7 +251,7 @@ local GetScoresRequestProcessor = function(res, params)
 					elseif boogie_ex then
 						loadingText:settext("Boogie EX")
 					elseif SL["P"..i].ActiveModifiers.ShowExScore then
-						loadingText:settext(THEME:GetString("Groovestats", "ExScore"))
+						loadingText:settext(THEME:GetString("GrooveStats", "ExScore"))
 					else
 						loadingText:settext(THEME:GetString("GrooveStats", "GrooveStats"))
 					end
@@ -261,7 +261,7 @@ local GetScoresRequestProcessor = function(res, params)
 					elseif boogie_ex then
 						loadingText:settext("No Boogie EX")
 					elseif SL["P"..i].ActiveModifiers.ShowExScore then
-						loadingText:settext(THEME:GetString("Groovestats", "NoEXData"))
+						loadingText:settext(THEME:GetString("GrooveStats", "NoEXData"))
 					else
 						loadingText:settext(THEME:GetString("GrooveStats", "NoData"))
 					end
@@ -361,7 +361,7 @@ af[#af+1] = RequestResponseActor(17, 50)..{
 					requestCacheKey = requestCacheKey .. SL[pn].Streams.Hash .. SL[pn].ApiKey .. pn
 					local loadingText = master:GetChild("PaneDisplayP"..i):GetChild("Loading")
 					loadingText:visible(true)
-					loadingText:settext(THEME:GetString("Groovestats", "Loading")):diffuse(Color.Black)
+					loadingText:settext(THEME:GetString("GrooveStats", "Loading")):diffuse(Color.Black)
 					sendRequest = true
 				end
 			end

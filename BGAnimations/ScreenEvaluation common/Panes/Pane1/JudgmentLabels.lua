@@ -85,17 +85,17 @@ end
 
 -- labels: hands/ex, holds, mines, rolls
 for index, label in ipairs(RadarCategories) do
-	local performance = stats:GetRadarActual():GetValue( "RadarCategory_"..firstToUpper(EnglishRadarCategories[label]) )
-	local possible = stats:GetRadarPossible():GetValue( "RadarCategory_"..firstToUpper(EnglishRadarCategories[label]) )
+    local performance = stats:GetRadarActual():GetValue( "RadarCategory_"..firstToUpper(EnglishRadarCategories[label]) )
+    local possible = stats:GetRadarPossible():GetValue( "RadarCategory_"..firstToUpper(EnglishRadarCategories[label]) )
 
-	t[#t+1] = LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal")..{
-		Text=label,
-		InitCommand=function(self) self:zoom(0.833):horizalign(right) end,
-		BeginCommand=function(self)
-			self:x( (controller == PLAYER_1 and -160) or 90 )
-			self:y((index-1)*28 + 41)
-		end
-	}
+    t[#t+1] = LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal")..{
+        Text=label,
+        InitCommand=function(self) self:zoom(0.833):horizalign(right) end,
+        BeginCommand=function(self)
+            self:x( (controller == PLAYER_1 and -160) or 90 )
+            self:y((index-1)*28 + 41)
+        end
+    }
 end
 
 return t

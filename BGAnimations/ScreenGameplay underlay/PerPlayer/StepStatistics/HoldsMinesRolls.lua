@@ -195,6 +195,9 @@ for i, category in ipairs(RadarCategories) do
 			local length = digits_to_fmt - digits
 
 			-----------------------------------------------------------------
+			-- TODO: Only update attributes as needed instead of clearing and adding.
+				self:ClearAttributes()
+
 			-- make leading 0s a dim gray; this is the normal case for values like "042/125"
 			-- the leading "0" in "042" should be a dimmed gray color, as well as the slash
 			if length >= 0 then

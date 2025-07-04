@@ -1,6 +1,3 @@
-local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/"..ThemePrefs.Get("VisualStyle")
-local banner_directory = FILEMAN:DoesFileExist(path) and path or THEME:GetPathG("","_FallbackBanners/Arrows")
-
 local SongOrCourse = GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentCourse() or GAMESTATE:GetCurrentSong()
 
 local bannerWidth = 418
@@ -21,7 +18,7 @@ local t = Def.ActorFrame{
 -- fallback banner
 t[#t+1] = Def.Sprite{
 	Name="FallbackBanner",
-	Texture=banner_directory.."/banner"..SL.Global.ActiveColorIndex.." (doubleres).png",
+	Texture=GetFallbackBanner(),
 	InitCommand=function(self) self:setsize(bannerWidth, bannerHeight) end,
 
 	CurrentSongChangedMessageCommand=function(self) self:playcommand("Set") end,

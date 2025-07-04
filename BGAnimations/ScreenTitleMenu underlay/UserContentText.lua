@@ -64,8 +64,8 @@ return LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal")..{
 		if ThemePrefs.Get("RainbowMode") and not HolidayCheer() then
 			textColor = Color.Black
 		end
-		if ThemePrefs.Get("VisualStyle") == "SRPG8" then
-			textColor = color(SL.SRPG8.TextColor)
+		if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+			textColor = color(SL.SRPG9.TextColor)
 			shadowLength = 0.4
 		end
 

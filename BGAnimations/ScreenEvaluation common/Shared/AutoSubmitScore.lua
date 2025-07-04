@@ -257,7 +257,7 @@ local AutoSubmitRequestProcessor = function(res, overlay)
 							-- TODO(teejusb): Determine how we want to easily display EX scores.
 							-- For now just highlight blue because it's simple.
 							if showExScore then
-								entry:GetChild("Score"):diffuse(SL.JudgmentColors["FA+"][1])
+								entry:GetChild("Score"):diffuse(SL.JudgmentColors["ITG"][1])
 							else
 								entry:GetChild("Score"):diffuse(Color.White)
 							end
@@ -296,7 +296,7 @@ local AutoSubmitRequestProcessor = function(res, overlay)
 								gsEntry["rank"]..".",
 								GetMachineTag(gsEntry),
 								string.format("%.2f%%", gsEntry["score"]/100),
-								ParseGroovestatsDate(gsEntry["date"]),
+								ParseGrooveStatsDate(gsEntry["date"]),
 								entry
 							)
 							if gsEntry["isRival"] then
@@ -437,43 +437,65 @@ end
 local af = Def.ActorFrame {
 	Name="AutoSubmitMaster",
 	OnCommand=function(self)
-		-- local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
-		-- overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):visible(true)
-		-- overlay:queuecommand("DirectInputToEventOverlayHandler")
+		-- dummy response for event overlay testing
+		 -- local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
+		 -- overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):visible(true)
+		 -- overlay:queuecommand("DirectInputToEventOverlayHandler")
 
-		-- local eventAf = overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):GetChild("P1EventAf")
-		-- eventAf:playcommand("Show", {data={
-		-- 	["rpg"] = {
-		-- 		["name"] = "SRPG8",
-		-- 		["result"] = "score-added",
-		-- 		["rpgLeaderboard"] = {
-		-- 			{
-		-- 				["rank"] = 1,
-		-- 				["name"] = "Player1",
-		-- 				["score"] = 9900,
-		-- 				["date"] ="2024-05-05 1:20:30",
-		-- 				["isRival"] = false,
-		-- 				["isSelf"] = false,
-		-- 			},
-		-- 			{
-		-- 				["rank"] = 2,
-		-- 				["name"] = "Player2",
-		-- 				["score"] = 9800,
-		-- 				["date"] ="2024-05-05 1:20:30",
-		-- 				["isRival"] = true,
-		-- 				["isSelf"] = false,
-		-- 			},
-		-- 			{
-		-- 				["rank"] = 3,
-		-- 				["name"] = "Player3",
-		-- 				["score"] = 9700,
-		-- 				["date"] ="2024-05-05 1:20:30",
-		-- 				["isRival"] = false,
-		-- 				["isSelf"] = true,
-		-- 			}
-		-- 		}
-		-- 	}
-		-- }})
+		 -- local eventAf = overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):GetChild("P1EventAf")
+		 -- eventAf:playcommand("Show", {data={
+		 --	["rpg"] = {
+		 --		["name"] = "Stamina RPG 9",
+		 --		["scoreDelta"] = 10,
+		 --		["rateDelta"] = 10,
+		 --		["progress"] = {
+		 --			["statImprovements"] = {
+		 --				{
+		 --					["name"] = "tp",
+		 --					["gained"] = 12345,
+		 --				}
+		 --			},
+		 --			["questsCompleted"] = {
+		 --				{
+		 --					["title"] = "SN Daily I",
+		 --					["rewards"] = {
+		 --						{
+		 --							["type"] = "ad-hoc",
+		 --							["description"] = "Good Job!"
+		 --						}
+		 --					}
+		 --				}
+		 --			},
+		 --		},
+		 --		["result"] = "score-added",
+		 --		["rpgLeaderboard"] = {
+		 --			{
+		 --				["rank"] = 1,
+		 --				["name"] = "Player1",
+		 --				["score"] = 9900,
+		 --				["date"] ="2024-05-05 1:20:30",
+		 --				["isRival"] = false,
+		 --				["isSelf"] = false,
+		 --			},
+		 --			{
+		 --				["rank"] = 2,
+		 --				["name"] = "Player2",
+		 --				["score"] = 9800,
+		 --				["date"] ="2024-05-05 1:20:30",
+		 --				["isRival"] = true,
+		 --				["isSelf"] = false,
+		 --			},
+		 --			{
+		 --				["rank"] = 3,
+		 --				["name"] = "Player3",
+		 --				["score"] = 9700,
+		 --				["date"] ="2024-05-05 1:20:30",
+		 --				["isRival"] = false,
+		 --				["isSelf"] = true,
+		 --			}
+		 --		}
+		 --	}
+		 -- }})
 	end,
 	RequestResponseActor(17, 50)..{
 		OnCommand=function(self)

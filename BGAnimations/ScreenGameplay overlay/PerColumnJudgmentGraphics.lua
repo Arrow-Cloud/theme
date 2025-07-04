@@ -86,6 +86,9 @@ for columnIndex=1,numColumns do
 			self:x((columnIndex - (numColumns/2 + 0.5)) * (width/numColumns))
 					:vertalign('VertAlign_Top')
 					:setsize(width/numColumns, _screen.h - yOffset)
+			
+			local spacing = mods.Spacing:gsub("%%","")/100
+			self:addx((columnIndex - (numColumns/2 + 0.5))*2 * (width/numColumns) * spacing)
 					
 			local kids = self:GetChildren()
 			sprite = kids.HeldMiss

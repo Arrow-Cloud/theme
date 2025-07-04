@@ -30,14 +30,14 @@ end
 local isRpgFolder=function(self)
 	local song = GAMESTATE:GetCurrentSong()
 	local group = song:GetGroupName()
-	local rpgsong = string.find(string.upper(group), "STAMINA RPG 8")
+	local rpgsong = string.find(string.upper(group), "STAMINA RPG 9")
 	return rpgsong
 end
 
 
 -- -----------------------------------------------------------------------
 WriteRpgFile = function(dir, song, rate)
-	local path = dir.. "SRPG8.rpg"
+	local path = dir.. "SRPG9.rpg"
 	local f = RageFileUtil:CreateRageFile()
 	local existing = ""
 	local recordType

@@ -495,10 +495,10 @@ local af = Def.ActorFrame{
 	},
 	-- SRPG Logo
 	Def.Sprite{
-		Texture=THEME:GetPathG("", "_VisualStyles/SRPG8/logo_main (doubleres).png"),
-		Name="SRPG8Logo",
+		Texture=THEME:GetPathG("", "_VisualStyles/SRPG9/logo_alt (doubleres).png"),
+		Name="SRPG9Logo",
 		InitCommand=function(self)
-			self:diffusealpha(0.4):zoom(0.05):diffusealpha(0)
+			self:diffusealpha(0.4):zoom(0.07):diffusealpha(0)
 		end,
 		LoopScoreboxCommand=function(self)
 			if cur_style == 2 then
@@ -608,7 +608,7 @@ for i=1,NumEntries do
 			if score.isFail then
 				clr = Color.Red
 			elseif score.isEx then
-				clr = SL.JudgmentColors["FA+"][1]
+				clr = SL.JudgmentColors["ITG"][1]
 			elseif score.isSelf then
 				clr = self_color
 			elseif score.isRival then

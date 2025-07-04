@@ -161,7 +161,7 @@ function NPS_Histogram_Static_Course(player, width, height, desaturation)
 	local trail = GAMESTATE:GetCurrentTrail(pn)
 	
 	-- first get the total time
-	local totaltime = TotalCourseLength(player) / SL.Global.ActiveModifiers.MusicRate
+	local totaltime = TotalCourseLength(player)
 	
 	-- build a table of offsets and widths (doing one loop with everything in InitCommand will just use
 	-- the last value whatever local variable in the loop was once the actors execute)

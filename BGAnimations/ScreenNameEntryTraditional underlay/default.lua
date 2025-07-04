@@ -94,19 +94,16 @@ local t = Def.ActorFrame {
 	end
 }
 
-local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/"..ThemePrefs.Get("VisualStyle")
-local banner_directory = FILEMAN:DoesFileExist(path) and path or THEME:GetPathG("","_FallbackBanners/Arrows")
-
 -- Things that are constantly on the screen (fallback banner + masks)
 t[#t+1] = Def.ActorFrame {
 
 	--fallback banner
-	LoadActor(banner_directory .."/banner"..SL.Global.ActiveColorIndex.." (doubleres).png")..{
+	LoadActor(GetFallbackBanner())..{
 		OnCommand=function(self) self:xy(_screen.cx, 121.5):zoom(0.7) end
 	},
 
 	Def.Quad{
-		Name="LeftMask";
+		Name="LeftMask",
 		InitCommand=function(self) self:horizalign(left) end,
 		OnCommand=function(self) self:xy(0, _screen.cy):zoomto(_screen.cx-272, _screen.h):MaskSource() end
 	},

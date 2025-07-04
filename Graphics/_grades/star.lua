@@ -55,84 +55,86 @@ t[#t+1] = LoadActor(starPath)..{
 	end,
 }
 
-t[#t+1] = LoadActor("./assets/affluent.png")..{
-	OnCommand=function(self)
-		self:y(10)
-		self:zoom(1.2)
-		self:diffusealpha(0)
-		self.rotatepos = math.random() * 360
-		self:rotationz(self.rotatepos)
-		if pss ~= nil and pss:GetTapNoteScores('TapNoteScore_Miss') == 0 and
-				pss:GetTapNoteScores('TapNoteScore_W5') == 0 and
-				pss:GetTapNoteScores('TapNoteScore_W4') == 0 and
-				pss:GetTapNoteScores('TapNoteScore_W3') == 0 and
-				pss:GetTapNoteScores('TapNoteScore_W2') == 1 then
-			self:sleep(9)
-			self:queuecommand('Appear')
-		end
-	end,
-	AppearCommand=function(self)
-		self:linear(3)
-		self:diffusealpha(0.7)
-		self:ztestmode('WriteOnFail')
-		self:sleep(2)
-		self.rotatespeed = 0.6 + 0.4 * math.random()
-		self:queuecommand('AnimateLoop')
-	end,
-	AnimateLoopCommand=function(self)
-		self:rotationz(self.rotatepos)
-		self:accelerate(self.rotatespeed)
-		self:rotationz(self.rotatepos-180)
-		self:sleep(0)
-		self:decelerate(self.rotatespeed)
-		self:rotationz(self.rotatepos-360)
-		self:queuecommand('AnimateLoop')
-	end,
-}
-
-t[#t+1] = LoadActor("./assets/goldstar (stretch).png")..{
-	InitCommand=function(self)
-		self:visible(false)
-	end,
-	OnCommand=function(self)
-		self:draworder(100)
-		-- if worse score than 1 great
-		if pss == nil or pss:GetTapNoteScores('TapNoteScore_Miss') > 0 or
-				pss:GetTapNoteScores('TapNoteScore_W5') > 0 or
-				pss:GetTapNoteScores('TapNoteScore_W4') > 0 or
-				pss:GetTapNoteScores('TapNoteScore_W3') > 1 then
-			-- Nothing special
-			self:visible(false)
-		elseif pss:GetTapNoteScores('TapNoteScore_W3') == 1 then
-			-- Black flag; one great
-			self:visible(true)
-			self:diffuse(Color.Black)
-		elseif pss:GetTapNoteScores('TapNoteScore_W2') == 1 then
-			-- Lol; one ex
-			self:visible(true)
-			self:diffuse(Color.Black)
+if PREFSMAN:GetPreference("EasterEggs") then
+	t[#t+1] = LoadActor("./assets/affluent.png")..{
+		OnCommand=function(self)
+			self:y(10)
+			self:zoom(1.2)
+			self:diffusealpha(0)
+			self.rotatepos = math.random() * 360
+			self:rotationz(self.rotatepos)
+			if pss ~= nil and pss:GetTapNoteScores('TapNoteScore_Miss') == 0 and
+					pss:GetTapNoteScores('TapNoteScore_W5') == 0 and
+					pss:GetTapNoteScores('TapNoteScore_W4') == 0 and
+					pss:GetTapNoteScores('TapNoteScore_W3') == 0 and
+					pss:GetTapNoteScores('TapNoteScore_W2') == 1 then
+				self:sleep(9)
+				self:queuecommand('Appear')
+			end
+		end,
+		AppearCommand=function(self)
+			self:linear(3)
+			self:diffusealpha(0.7)
+			self:ztestmode('WriteOnFail')
 			self:sleep(2)
-			self:queuecommand('Animate')
-		else
-			-- Nothing worth taunting over
+			self.rotatespeed = 0.6 + 0.4 * math.random()
+			self:queuecommand('AnimateLoop')
+		end,
+		AnimateLoopCommand=function(self)
+			self:rotationz(self.rotatepos)
+			self:accelerate(self.rotatespeed)
+			self:rotationz(self.rotatepos-180)
+			self:sleep(0)
+			self:decelerate(self.rotatespeed)
+			self:rotationz(self.rotatepos-360)
+			self:queuecommand('AnimateLoop')
+		end,
+	}
+
+	t[#t+1] = LoadActor("./assets/goldstar (stretch).png")..{
+		InitCommand=function(self)
 			self:visible(false)
-		end
-	end,
-	AnimateCommand=function(self)
-		self:diffuse(Color.White)
-		self:wag()
-		self:linear(3)
-		self:zoom(5)
-		self:queuecommand('Animate2')
-	end,
-	Animate2Command=function(self)
-		self:linear(1)
-		self:zoom(1.6)
-		self:queuecommand('Animate3')
-	end,
-	Animate3Command=function(self)
-		self:texcoordvelocity(1,0)
-	end,
-}
+		end,
+		OnCommand=function(self)
+			self:draworder(100)
+			-- if worse score than 1 great
+			if pss == nil or pss:GetTapNoteScores('TapNoteScore_Miss') > 0 or
+					pss:GetTapNoteScores('TapNoteScore_W5') > 0 or
+					pss:GetTapNoteScores('TapNoteScore_W4') > 0 or
+					pss:GetTapNoteScores('TapNoteScore_W3') > 1 then
+				-- Nothing special
+				self:visible(false)
+			elseif pss:GetTapNoteScores('TapNoteScore_W3') == 1 then
+				-- Black flag; one great
+				self:visible(true)
+				self:diffuse(Color.Black)
+			elseif pss:GetTapNoteScores('TapNoteScore_W2') == 1 then
+				-- Lol; one ex
+				self:visible(true)
+				self:diffuse(Color.Black)
+				self:sleep(2)
+				self:queuecommand('Animate')
+			else
+				-- Nothing worth taunting over
+				self:visible(false)
+			end
+		end,
+		AnimateCommand=function(self)
+			self:diffuse(Color.White)
+			self:wag()
+			self:linear(3)
+			self:zoom(5)
+			self:queuecommand('Animate2')
+		end,
+		Animate2Command=function(self)
+			self:linear(1)
+			self:zoom(1.6)
+			self:queuecommand('Animate3')
+		end,
+		Animate3Command=function(self)
+			self:texcoordvelocity(1,0)
+		end,
+	}
+end
 
 return t

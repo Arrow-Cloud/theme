@@ -24,16 +24,16 @@ SL_CustomPrefs.Get = function()
 	local day = DayOfMonth()
 	local today = year * 10000 + month * 100 + day
 
-	if today >= 20230619 then
-		visualStyleChoices[#visualStyleChoices+1] = "😈"
-		visualStyleValues[#visualStyleValues+1] = "SRPG8"
+	if today >= 20240620 then
+		visualStyleChoices[#visualStyleChoices+1] = "✨"
+		visualStyleValues[#visualStyleValues+1] = "SRPG9"
 	else
 		local prefs = IniFile.ReadFile("/Save/ThemePrefs.ini")
 		local theme = PREFSMAN:GetPreference("Theme")
 		local lastActiveEvent = nil
-		if prefs[theme] and prefs[theme].LastActiveEvent == "SRPG8" then
-			visualStyleChoices[#visualStyleChoices+1] = "😈"
-			visualStyleValues[#visualStyleValues+1] = "SRPG8"
+		if prefs[theme] and prefs[theme].LastActiveEvent == "SRPG9" then
+			visualStyleChoices[#visualStyleChoices+1] = "✨"
+			visualStyleValues[#visualStyleValues+1] = "SRPG9"
 		end
 	end
 
@@ -169,6 +169,12 @@ SL_CustomPrefs.Get = function()
 		},
 		-- - - - - - - - - - - - - - - - - - - -
 		-- MenuTimer values for various screens
+		ScreenGrooveStatsLoginMenuTimer =
+		{
+			Default = 30,
+			Choices = map(SecondsToMSS, range(15, 90, 5)),
+			Values  = range(15, 90, 5),
+		},
 		ScreenSelectMusicMenuTimer =
 		{
 			Default = 300,
@@ -188,6 +194,12 @@ SL_CustomPrefs.Get = function()
 			Values  = range(30, 450, 15),
 		},
 		ScreenEvaluationMenuTimer =
+		{
+			Default = 60,
+			Choices = map(SecondsToMSS, range(15, 450, 15)),
+			Values  = range(15, 450, 15),
+		},
+		ScreenEvaluationNonstopMenuTimer =
 		{
 			Default = 60,
 			Choices = map(SecondsToMSS, range(15, 450, 15)),

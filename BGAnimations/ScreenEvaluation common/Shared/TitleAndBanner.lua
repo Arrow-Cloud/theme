@@ -1,8 +1,6 @@
-local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/"..ThemePrefs.Get("VisualStyle")
 local SongOrCourse = GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentCourse() or GAMESTATE:GetCurrentSong()
 
 local banner = {
-	directory = (FILEMAN:DoesFileExist(path) and path or THEME:GetPathG("","_FallbackBanners/Arrows")),
 	width = 418,
 	zoom = 0.7,
 }
@@ -29,7 +27,7 @@ if SongOrCourse and SongOrCourse:HasBanner() then
 	}
 else
 	--fallback banner
-	af[#af+1] = LoadActor(banner.directory .. "/banner" .. SL.Global.ActiveColorIndex .. " (doubleres).png")..{
+	af[#af+1] = LoadActor(GetFallbackBanner())..{
 		InitCommand=function(self) self:y(66):zoom(banner.zoom) end
 	}
 end

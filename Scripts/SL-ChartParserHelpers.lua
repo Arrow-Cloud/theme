@@ -242,6 +242,14 @@ GenerateBreakdownText = function(pn, minimization_level)
 	end
 	
 	local displaybpm = GetDisplayBPMs(pn)[1]
+	local realBpms = GAMESTATE:GetCurrentSong():GetTimingData():GetActualBPM()
+	
+	if realBpms then
+		if displaybpm * multiplier > realBpms[1] * multiplier and displaybpm * multiplier > realBpms[2] * multiplier then
+			displaybpm = realBpms[2]
+		end
+	end
+	
 	local calcbpm = (displaybpm * multiplier - math.floor(displaybpm * multiplier)) < 0.5 and math.floor(displaybpm * multiplier) or math.ceil(displaybpm * multiplier)
 	local endbpm = (multiplier == 1 and "") or " @ " .. calcbpm
 

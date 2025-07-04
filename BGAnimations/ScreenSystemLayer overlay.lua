@@ -3,8 +3,8 @@
 
 local t = Def.ActorFrame{
 	InitCommand=function(self)
-		-- In case we loaded the theme with SRPG8 and had Rainbow Mode enabled, disable it.
-		if ThemePrefs.Get("VisualStyle") == "SRPG8" and ThemePrefs.Get("RainbowMode") == true then
+		-- In case we loaded the theme with SRPG9 and had Rainbow Mode enabled, disable it.
+		if ThemePrefs.Get("VisualStyle") == "SRPG9" and ThemePrefs.Get("RainbowMode") == true then
 			ThemePrefs.Set("RainbowMode", false)
 			ThemePrefs.Save()
 		end
@@ -49,8 +49,8 @@ local function CreditsText( player )
 
 				local screenName = screen:GetName()
 				if screenName == "ScreenTitleMenu" or screenName == "ScreenTitleJoin" or screenName == "ScreenLogo" then
-					if ThemePrefs.Get("VisualStyle") == "SRPG8" then
-						textColor = color(SL.SRPG8.TextColor)
+					if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+						textColor = color(SL.SRPG9.TextColor)
 						shadowLength = 0.4
 					end
 				elseif (screen:GetName() == "ScreenEvaluationStage") or (screen:GetName() == "ScreenEvaluationNonstop") or (screen:GetName() == "ScreenGameplay") then
@@ -179,8 +179,8 @@ t[#t+1] = Def.BitmapText{
 			local textColor = Color.White
 			local screenName = screen:GetName()
 			if screen ~= nil and (screenName == "ScreenTitleMenu" or screenName == "ScreenTitleJoin" or screenName == "ScreenLogo") then
-				if ThemePrefs.Get("VisualStyle") == "SRPG8" then
-					textColor = color(SL.SRPG8.TextColor)
+				if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+					textColor = color(SL.SRPG9.TextColor)
 				end
 			end
 		end
@@ -237,8 +237,8 @@ t[#t+1] = Def.BitmapText{
 		local textColor = Color.White
 		local screenName = screen:GetName()
 		if screen ~= nil and (screenName == "ScreenTitleMenu" or screenName == "ScreenTitleJoin" or screenName == "ScreenLogo") then
-			if ThemePrefs.Get("VisualStyle") == "SRPG8" then
-				textColor = color(SL.SRPG8.TextColor)
+			if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+				textColor = color(SL.SRPG9.TextColor)
 			end
 		end
 	end
@@ -407,15 +407,15 @@ local NewSessionRequestProcessor = function(res, gsInfo)
 		local last_active_event = ThemePrefs.Get("LastActiveEvent")
 
 		for event in ivalues(events) do
-			if event["shortName"] == "SRPG8" then
-				-- If we're already on the SRPG8 theme, then set the last_active_event
+			if event["shortName"] == "SRPG9" then
+				-- If we're already on the SRPG9 theme, then set the last_active_event
 				-- if it's not already set to SRPG so that we don't bring up the prompt.
-				if last_active_event ~= "SRPG8" and style == "SRPG8" then
-					ThemePrefs.Set("LastActiveEvent", "SRPG8")
-					last_active_event = "SRPG8"
+				if last_active_event ~= "SRPG9" and style == "SRPG9" then
+					ThemePrefs.Set("LastActiveEvent", "SRPG9")
+					last_active_event = "SRPG9"
 				end
 			
-				if last_active_event ~= "SRPG8" then
+				if last_active_event ~= "SRPG9" then
 					local top_screen = SCREENMAN:GetTopScreen()
 					top_screen:SetNextScreenName("ScreenPromptToSetSrpgVisualStyle"):StartTransitioningScreen("SM_GoToNextScreen")
 					break
@@ -461,8 +461,8 @@ local function DiffuseText(bmt)
 	if ThemePrefs.Get("RainbowMode") and not HolidayCheer() then
 		textColor = Color.Black
 	end
-	if ThemePrefs.Get("VisualStyle") == "SRPG8" then
-		textColor = color(SL.SRPG8.TextColor)
+	if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+		textColor = color(SL.SRPG9.TextColor)
 		shadowLength = 0.4
 	end
 
@@ -588,27 +588,41 @@ t[#t+1] = Def.ActorFrame {
 		self.IsDisplaying = false
 	end,
 	SystemMessageMessageCommand=function(self, params)
-		if self.IsDisplaying then
-			self:finishtweening()
-			local newText = bmt:GetText().."\n"..params.Message
-			-- Display only the last few lines of text
-			local lines = {}
-			for line in newText:gmatch("[^\n]+") do
-				lines[#lines+1] = line
+		-- Handle case where the message usage is SM(msg, duration)
+		local stack = params.Stack or false
+		if type(stack) == "number" then
+			params.Stack = params.Duration
+			params.Duration = stack
+		end
+
+		if params.Stack == true then
+			if self.IsDisplaying then
+				self:finishtweening()
+				local newText = bmt:GetText().."\n"..params.Message
+				-- Display only the last few lines of text
+				local lines = {}
+				for line in newText:gmatch("[^\n]+") do
+					lines[#lines+1] = line
+				end
+				local start = math.max(#lines - totalVisibleLines, 1)
+				local displayText = table.concat(lines, "\n", start, #lines)
+				bmt:settext(displayText)
+			else
+				bmt:settext( params.Message )
 			end
-			local start = math.max(#lines - totalVisibleLines, 1)
-			local displayText = table.concat(lines, "\n", start, #lines)
-			bmt:settext(displayText)
+			self:playcommand( "On")
+			if params.NoAnimate then
+				self:finishtweening()
+			end
+			self:sleep(type(params.Duration)=="number" and params.Duration or 3.33 + 0.25):queuecommand("Off")
 		else
 			bmt:settext( params.Message )
+			self:playcommand( "On" )
+			if params.NoAnimate then
+				self:finishtweening()
+			end
+			self:playcommand( "Off", params )
 		end
-
-		self:playcommand( "On", params )
-		if params.NoAnimate then
-			self:finishtweening()
-		end
-
-		self:sleep(type(params.Duration)=="number" and params.Duration or 3.33 + 0.25):queuecommand("Off")
 	end,
 	HideSystemMessageMessageCommand=function(self) self:finishtweening() end,
 

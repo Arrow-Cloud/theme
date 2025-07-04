@@ -2,9 +2,6 @@ local position_on_screen = ...
 
 local SongOrCourse, StageNum
 
-local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/"..ThemePrefs.Get("VisualStyle")
-local banner_directory = FILEMAN:DoesFileExist(path) and path or THEME:GetPathG("","_FallbackBanners/Arrows")
-
 -- -----------------------------------------------------------------------
 -- this ActorFrame contains elements shared by both players
 -- like the background Quad, song banner, and song title
@@ -35,7 +32,7 @@ t[#t+1] = Def.Quad{
 }
 
 --fallback banner
-t[#t+1] = LoadActor(banner_directory.."/banner"..SL.Global.ActiveColorIndex.." (doubleres).png")..{
+t[#t+1] = LoadActor(GetFallbackBanner())..{
 	Name="FallbackBanner",
 	InitCommand=function(self) self:y(-6):zoom(0.333) end,
 	DrawStageCommand=function(self) self:visible(SongOrCourse ~= nil and not SongOrCourse:HasBanner()) end

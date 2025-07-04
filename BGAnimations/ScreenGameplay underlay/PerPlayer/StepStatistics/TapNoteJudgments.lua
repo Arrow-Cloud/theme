@@ -163,6 +163,8 @@ for index, window in ipairs(TNS.Types) do
 					Length=(digits - (math.floor(math.log10(TNS.Judgments[window]))+1)),
 					Diffuse=Brightness(TNS.Colors[index], 0.35)
 				}
+				-- TODO: Only update attributes as needed instead of clearing and adding.
+				self:ClearAttributes()
 				self:AddAttribute(0, leadingZeroAttr )
 			end
 		end

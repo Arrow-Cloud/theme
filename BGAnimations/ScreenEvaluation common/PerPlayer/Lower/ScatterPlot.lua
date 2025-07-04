@@ -1,6 +1,4 @@
--- if we're in CourseMode, bail now
--- the normal LifeMeter graph (Def.GraphDisplay) will be drawn
--- if GAMESTATE:IsCourseMode() then return end
+-- if we're in CourseMode, then we'll have to collect steps per chart
 local iscourse = GAMESTATE:IsCourseMode()
 
 -- arguments passed in from Graphs.lua
@@ -15,18 +13,6 @@ local tenms = mods.SmallerWhite
 local SplitWhites = mods.SplitWhites
 local magenta = color("#E928FF")
 
-local function TotalCourseLength(player)
-    -- utility for graph stuff because i ended up doing this a lot
-    -- i use this method instead of TrailUtil.GetTotalSeconds because that leaves unused time at the end in graphs
-    local trail = GAMESTATE:GetCurrentTrail(player)
-    local t = 0
-    for te in ivalues(trail:GetTrailEntries()) do
-        t = t + te:GetSong():GetLastSecond()
-    end
-
-    return t
-end
-
 -- sequential_offsets gathered in ./BGAnimations/ScreenGameplay overlay/JudgmentOffsetTracking.lua
 local sequential_offsets = SL[pn].Stages.Stats[SL.Global.Stages.PlayedThisGame + 1].sequential_offsets
 local death_second = SL[pn].Stages.Stats[SL.Global.Stages.PlayedThisGame + 1].DeathSecond
@@ -40,7 +26,7 @@ local Steps = GAMESTATE:GetCurrentSteps(player)
 local TimingData = Steps:GetTimingData()
 -- FirstSecond and LastSecond are used in scaling the x-coordinates of the AMV's vertices
 local FirstSecond = math.min(TimingData:GetElapsedTimeFromBeat(0), 0)
-local LastSecond = (not iscourse) and GAMESTATE:GetCurrentSong():GetLastSecond() or TotalCourseLength(player)
+local LastSecond = (not iscourse) and GAMESTATE:GetCurrentSong():GetLastSecond() or TotalCourseLength(player) * SL.Global.ActiveModifiers.MusicRate
 
 -- variables that will be used and re-used in the loop while calculating the AMV's vertices
 local Offset, CurrentSecond, TimingWindow, x, y, c, r, g, b
@@ -232,6 +218,7 @@ end
 -- Since we've now split the table into multiples, create an ActorMultiVertex for each table and store them into one ActorFrame.
 local af = Def.ActorFrame{}
 
+-- if this is the score screen for a course, then iterate through each chart and plot them
 if iscourse then
 	local trailEntries = GAMESTATE:GetCurrentTrail(player):GetTrailEntries()
 	local curSecs = 0

@@ -298,7 +298,7 @@ end
 --  - GrooveStats is enabled in the operator menu.
 --  - We were successfully able to make a GrooveStats conenction previously.
 --  - We must be in the "dance" game mode (not "pump", etc)
---  - We must be in either ITG or FA+ mode.
+--  - We must be in ITG.
 --  - At least one Api Key must be available (this condition may be relaxed in the future)
 --  - We must not be in course mode (ZANKOKU: moving this specific check to autosubmitscore instead, since otherwise it blocks scorebox when playing course mode).
 IsServiceAllowed = function(condition)
@@ -306,7 +306,7 @@ IsServiceAllowed = function(condition)
 		ThemePrefs.Get("EnableGrooveStats") and
 		SL.GrooveStats.IsConnected and
 		GAMESTATE:GetCurrentGame():GetName()=="dance" and
-		(SL.Global.GameMode == "ITG" or SL.Global.GameMode == "FA+") and
+		SL.Global.GameMode == "ITG" and
 		(SL.P1.ApiKey ~= "" or SL.P2.ApiKey ~= ""))
 end
 
@@ -342,7 +342,7 @@ ValidForGrooveStats = function(player)
 	-- FA+ is okay because it just halves ITG's TimingWindowW1 but keeps everything else the same.
 	-- Casual (and Experimental, Demonic, etc.) uses different settings
 	-- that are incompatible with GrooveStats ranking.
-	valid[4] = (SL.Global.GameMode == "ITG" or SL.Global.GameMode == "FA+")
+	valid[4] = SL.Global.GameMode == "ITG"
 
 	-- ------------------------------------------
 	-- Next, check global Preferences that would invalidate the score.
@@ -434,42 +434,6 @@ ValidForGrooveStats = function(player)
 
 			valid[7] = valid[7] and THEME:GetMetric("ScoreKeeperNormal", "PercentScoreWeight"..window) == ExpectedScoreWeight[i]
 		end
-	elseif SL.Global.GameMode == "FA+" then
-		for i, window in ipairs(TimingWindows) do
-			-- This handles the "offset" for the FA+ window, while also retaining the correct indices for Holds/Mines/Rolls
-			-- i idx
-			-- 1  * - FA+ (idx doesn't matter as we explicitly handle the i == 1 case)
-			-- 2  1 - Fantastic
-			-- 3  2 - Excellent
-			-- 4  3 - Greats
-			-- 5  4 - Decents
-			-- 6  6 - Holds (notice how we skipped idx == 5, which would've been the Way Off window)
-			-- 7  7 - Mines
-			-- 8  8 - Rolls
-			-- Only check if the Timing Window is actually "enabled".
-			if i > 5 or SL[pn].ActiveModifiers.TimingWindows[i] then
-				local idx = (i < 6 and i-1 or i)
-				if i == 1 then
-					-- For the FA+ fantastic, the first window can be anything as long as it's <= the actual fantastic window
-					-- We could use FloatEquals here, but that's a 0.0001 margin of error for the equality case which I think 
-					-- will be generally irrelevant.
-					valid[7] = valid[7] and (PREFSMAN:GetPreference("TimingWindowSeconds"..window) + TWA <= ExpectedWindows[1])
-				else
-					valid[7] = valid[7] and FloatEquals(PREFSMAN:GetPreference("TimingWindowSeconds"..window) + TWA, ExpectedWindows[idx])
-				end
-			end
-		end
-
-		for i, window in ipairs(LifeWindows) do
-			local idx = (i < 6 and i-1 or i)
-			if i == 1 then
-				valid[7] = valid[7] and FloatEquals(THEME:GetMetric("LifeMeterBar", "LifePercentChange"..window), ExpectedLife[1])
-				valid[7] = valid[7] and THEME:GetMetric("ScoreKeeperNormal", "PercentScoreWeight"..window) == ExpectedScoreWeight[1]
-			else
-				valid[7] = valid[7] and FloatEquals(THEME:GetMetric("LifeMeterBar", "LifePercentChange"..window), ExpectedLife[idx])
-				valid[7] = valid[7] and THEME:GetMetric("ScoreKeeperNormal", "PercentScoreWeight"..window) == ExpectedScoreWeight[idx]
-			end
-		end
 	end
 
 	-- Validate Rate Mod
@@ -514,9 +478,6 @@ ValidForGrooveStats = function(player)
 		-- Anything else is not allowed for GrooveStats submission.
 		-- "invalid" options (like HitMine or something), resolve to TNS_None.
 		valid[13] = minTNSToScoreNores ~= "W1" and minTNSToScoreNores ~= "W2"
-	elseif SL.Global.GameMode == "FA+" then
-		-- In FA+ mode, Greats are set to W4.
-		valid[13] = minTNSToScoreNores ~= "W1" and minTNSToScoreNores ~= "W2" and minTNSToScoreNores ~= "W3"
 	else
 		-- Other game modes are not supported.
 		valid[13] = false
@@ -606,18 +567,6 @@ CreateCommentString = function(player)
 			timingWindowOption = "No WO"
 		elseif not SL[pn].ActiveModifiers.TimingWindows[1] and not SL[pn].ActiveModifiers.TimingWindows[2] then
 			timingWindowOption = "No Fan/Exc"
-		end
-	elseif SL.Global.GameMode == "FA+" then
-		if not SL[pn].ActiveModifiers.TimingWindows[4] and not SL[pn].ActiveModifiers.TimingWindows[5] then
-			timingWindowOption = "No Gre/Dec/WO"
-		elseif not SL[pn].ActiveModifiers.TimingWindows[5] then
-			timingWindowOption = "No Dec/WO"
-		elseif not SL[pn].ActiveModifiers.TimingWindows[1] and not SL[pn].ActiveModifiers.TimingWindows[2] then
-			-- Weird flex but okay
-			timingWindowOption = "No Fan/WO"
-		else
-			-- Way Offs are always removed in FA+ mode.
-			timingWindowOption = "No WO"
 		end
 	end
 
