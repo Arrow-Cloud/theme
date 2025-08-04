@@ -1,14 +1,19 @@
--- this is based off of Kuro's discord leaderboard scraper.
--- https://github.com/pogof/SimplyLove-DiscordLeaderboard
+--[[
+ArrowCloud Module for SimplyLove
+Inspired and adapted from Kuro's discord leaderboard scraper: https://github.com/pogof/SimplyLove-DiscordLeaderboard
+]]
 
--- add future URL here
-local BaseURL = "https://b4mdyahpki.execute-api.us-east-2.amazonaws.com/prod"
+-- Module configuration
+local ArrowCloud = {}
 
+-- Constants
+local BASE_URL = "https://b4mdyahpki.execute-api.us-east-2.amazonaws.com/prod"
+local MODULE_TAG = "[ArrowCloud-SLmodule]"
+
+-- Utility functions
 local function debugPrint(message)
-  Trace("[ArrowCloud-SLmodule] " .. message)
+  Trace(MODULE_TAG .. " " .. message)
 end
-
---------------------------------------------------------------------------------------------------
 
 local function printTable(t, indent)
   indent = indent or 0
@@ -24,23 +29,15 @@ local function printTable(t, indent)
   end
 end
 
---------------------------------------------------------------------------------------------------
-
-local function readKey(player)
-  local pdir
-  if player == PLAYER_1 then
-    pdir = 0
-  else
-    pdir = 1
-  end
-
-  local profilePath = PROFILEMAN:GetProfileDir(pdir)
+-- Profile and API key management
+local function readApiKey(player)
+  local playerIndex = (player == PLAYER_1) and 0 or 1
+  local profilePath = PROFILEMAN:GetProfileDir(playerIndex)
   local filePath = profilePath .. "ArrowCloud.ini"
-
   local apiKey
 
   if not FILEMAN:DoesFileExist(filePath) then
-    -- The file doesn't exist. We will create it for this profile, and then just return.
+    -- Create file with empty API key for this profile
     IniFile.WriteFile(filePath, {
       ["ArrowCloud"] = {
         ["ApiKey"] = "",
@@ -48,21 +45,16 @@ local function readKey(player)
     })
   else
     local contents = IniFile.ReadFile(filePath)
-    for k, v in pairs(contents["ArrowCloud"]) do
-      if k == "ApiKey" then
-        apiKey = v
-      end
+    if contents["ArrowCloud"] and contents["ArrowCloud"]["ApiKey"] then
+      apiKey = contents["ArrowCloud"]["ApiKey"]
     end
   end
 
   return apiKey
 end
 
-
-
---------------------------------------------------------------------------------------------------
-
-local function escapeString(str)
+-- JSON encoding utilities
+local function escapeJsonString(str)
   local replacements = {
     ['"'] = '\\"',
     ['\\'] = '\\\\',
@@ -75,15 +67,17 @@ local function escapeString(str)
   return str:gsub('[%z\1-\31\\"]', replacements)
 end
 
-local function encodeValue(value)
+local function encodeJsonValue(value)
   local valueType = type(value)
+  
   if valueType == "string" then
-    return '"' .. escapeString(value) .. '"'
+    return '"' .. escapeJsonString(value) .. '"'
   elseif valueType == "number" or valueType == "boolean" then
     return tostring(value)
   elseif valueType == "table" then
     local isArray = true
     local maxIndex = 0
+    
     for k, _ in pairs(value) do
       if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then
         isArray = false
@@ -93,15 +87,16 @@ local function encodeValue(value)
         maxIndex = k
       end
     end
+    
     local result = {}
     if isArray then
       for i = 1, maxIndex do
-        table.insert(result, encodeValue(value[i]))
+        table.insert(result, encodeJsonValue(value[i]))
       end
       return "[" .. table.concat(result, ",") .. "]"
     else
       for k, v in pairs(value) do
-        table.insert(result, '"' .. escapeString(k) .. '":' .. encodeValue(v))
+        table.insert(result, '"' .. escapeJsonString(k) .. '":' .. encodeJsonValue(v))
       end
       return "{" .. table.concat(result, ",") .. "}"
     end
@@ -110,26 +105,19 @@ local function encodeValue(value)
   end
 end
 
-local function encode(value)
-  return encodeValue(value)
+local function encodeJson(value)
+  return encodeJsonValue(value)
 end
 
---------------------------------------------------------------------------------------------------
+-- HTTP communication
+local function sendScoreData(data, apiKey, hash)
+  local url = BASE_URL .. "/v1/chart/" .. hash .. "/play"
+  debugPrint("HTTP POST URL: " .. url)
 
-local function sendData(data, apiKey, hash)
-  -- Send HTTP POST request
-  -- SCREENMAN:SystemMessage("Sending data to ArrowCloud...")
-
-  local URL = BaseURL .. "/v1/chart/" .. hash .. "/play"
-  debugPrint("HTTP POST URL: " .. URL)
-  -- SCREENMAN:SystemMessage(URL)
-
-  -- Convert data table to JSON string
-  local jsonBody = encode(data)
+  local jsonBody = encodeJson(data)
 
   NETWORK:HttpRequest {
-    url = URL,
-    -- url = "https://b4mdyahpki.execute-api.us-east-2.amazonaws.com/prod/post-check", -- For testing purposes"
+    url = url,
     method = "POST",
     body = jsonBody,
     headers = {
@@ -137,7 +125,6 @@ local function sendData(data, apiKey, hash)
       ["Authorization"] = "Bearer " .. apiKey
     },
     onResponse = function(response)
-      -- SCREENMAN:SystemMessage("Success")
       if type(response) == "table" then
         response = table.concat(response)
       end
@@ -146,9 +133,8 @@ local function sendData(data, apiKey, hash)
   }
 end
 
---------------------------------------------------------------------------------------------------
-
-local function GetLifebarData(player, GraphWidth, GraphHeight)
+-- Game data collection functions
+local function getLifebarData(player)
   local steps = GAMESTATE:GetCurrentSteps(player)
   local timingData = steps:GetTimingData()
   local firstSecond = math.min(timingData:GetElapsedTimeFromBeat(0), 0)
@@ -158,58 +144,47 @@ local function GetLifebarData(player, GraphWidth, GraphHeight)
 
   local lifebarData = {}
   local playerStageStats = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
-  local lifeRecord = playerStageStats:GetLifeRecord(lastSecond, 100) -- Use lastSecond and default samples
+  local lifeRecord = playerStageStats:GetLifeRecord(lastSecond, 100)
 
   for i, lifebarValue in ipairs(lifeRecord) do
     local stepSecond = chartStartSecond + (i - 1) * (duration / #lifeRecord)
-    local xValue = ((stepSecond - firstSecond) / duration) * GraphWidth
-    local yValue = lifebarValue * GraphHeight -- Scale y value to fit within GraphHeight
+    local xValue = ((stepSecond - firstSecond) / duration)
+    local yValue = lifebarValue
     table.insert(lifebarData, { x = xValue, y = yValue })
   end
 
   return lifebarData
 end
 
---------------------------------------------------------------------------------------------------
-
 local function getTimingData(player)
   local pn = ToEnumShortString(player)
-
   local sequential_offsets = SL[pn].Stages.Stats[SL.Global.Stages.PlayedThisGame + 1].sequential_offsets
   local worst_window = GetTimingWindow(math.max(2, GetWorstJudgment(sequential_offsets)))
-
   return sequential_offsets, worst_window
 end
 
---------------------------------------------------------------------------------------------------
-
--- Im only interested in what affects EX score, which should be just Holds, Rolls and Mines
--- Hands I guess are a separate thing, but might as well include them lol
--- Not interested in other Tech notation (at least for now lol)
-local function getRadar(player)
-  local pss = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
-  local RadarCategories = { 'Holds', 'Mines', 'Rolls' }
-
+local function getRadarData(player)
+  local playerStageStats = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
+  local radarCategories = { 'Holds', 'Mines', 'Rolls' }
   local radarValues = {}
 
-  for i, RCType in ipairs(RadarCategories) do
-    radarValues[RCType] = {}
-    radarValues[RCType][1] = pss:GetRadarActual():GetValue("RadarCategory_" .. RCType)
-    radarValues[RCType][2] = pss:GetRadarPossible():GetValue("RadarCategory_" .. RCType)
-    radarValues[RCType][2] = clamp(radarValues[RCType][2], 0, 999)
+  for _, category in ipairs(radarCategories) do
+    radarValues[category] = {}
+    radarValues[category][1] = playerStageStats:GetRadarActual():GetValue("RadarCategory_" .. category)
+    radarValues[category][2] = playerStageStats:GetRadarPossible():GetValue("RadarCategory_" .. category)
+    radarValues[category][2] = clamp(radarValues[category][2], 0, 999)
   end
 
   return radarValues
 end
 
---------------------------------------------------------------------------------------------------
-
-local function getModifiers(player)
+-- Player modifiers analysis
+local function getPlayerModifiers(player)
   local pn = ToEnumShortString(player)
   local playerOptions = GAMESTATE:GetPlayerState(pn):GetPlayerOptions("ModsLevel_Preferred")
 
-  -- Helper function to get speed mod type and value
-  local function getSpeedMod()
+  -- Speed modifier detection
+  local function getSpeedModifier()
     local cmod, cmodeSpeed = playerOptions:CMod()
     local mmod, mmodSpeed = playerOptions:MMod()
     local xmod, xmodSpeed = playerOptions:XMod()
@@ -221,20 +196,20 @@ local function getModifiers(player)
     elseif xmod then
       return "X", tonumber(("%.2f"):format(xmod))
     else
-      return "X", 1.0 -- Default
+      return "X", 1.0
     end
   end
 
-  -- Helper function to get mini percentage
-  local function getMiniPercent()
+  -- Mini percentage calculation
+  local function getMiniPercentage()
     local mini = playerOptions:Mini()
     if mini and mini > 0 then
       return math.floor(100 * mini + 0.5)
     end
-    return 100 -- Default 100%
+    return 100
   end
 
-  -- Helper function to determine perspective
+  -- Perspective detection
   local function getPerspective()
     if playerOptions:Overhead() then
       return "Overhead"
@@ -247,17 +222,17 @@ local function getModifiers(player)
     elseif playerOptions:Space() then
       return "Space"
     else
-      return "Overhead" -- Default
+      return "Overhead"
     end
   end
 
-  -- Helper function to get noteskin
+  -- Noteskin detection
   local function getNoteskin()
     local noteskin = playerOptions:NoteSkin()
     return noteskin or "default"
   end
 
-  -- Helper function to determine turn modifier
+  -- Turn modifier detection
   local function getTurnModifier()
     if playerOptions:Mirror() then
       return "Mirror"
@@ -272,17 +247,17 @@ local function getModifiers(player)
     elseif playerOptions:Shuffle() then
       return "Shuffle"
     elseif playerOptions:SoftShuffle() then
-      return "Shuffle" -- Soft shuffle is a variant of shuffle
+      return "Shuffle"
     elseif playerOptions:SuperShuffle() then
-      return "Shuffle" -- Super shuffle is a variant of shuffle
+      return "Shuffle"
     elseif playerOptions:HyperShuffle() then
-      return "Shuffle" -- Hyper shuffle is a variant of shuffle
+      return "Shuffle"
     else
       return "None"
     end
   end
 
-  -- Helper function to get active scroll modifier
+  -- Scroll modifier detection
   local function getScrollModifier()
     if playerOptions:Reverse() and playerOptions:Reverse() > 0.5 then
       return "Reverse"
@@ -299,8 +274,8 @@ local function getModifiers(player)
     end
   end
 
-  -- Helper function to get disabled timing windows
-  local function getDisabledWindows()
+  -- Disabled timing windows detection
+  local function getDisabledTimingWindows()
     local disabledWindows = playerOptions:GetDisabledTimingWindows()
     if not disabledWindows or #disabledWindows == 0 then
       return "None"
@@ -328,8 +303,8 @@ local function getModifiers(player)
     end
   end
 
-  -- Helper function to get active acceleration modifiers
-  local function getAccelerationMods()
+  -- Acceleration modifiers detection
+  local function getAccelerationModifiers()
     local accelMods = {}
     
     if playerOptions:Boost() and playerOptions:Boost() > 0 then
@@ -351,8 +326,8 @@ local function getModifiers(player)
     return accelMods
   end
 
-  -- Helper function to get active effect modifiers
-  local function getEffectMods()
+  -- Effect modifiers detection
+  local function getEffectModifiers()
     local effectMods = {}
     
     if playerOptions:Drunk() and playerOptions:Drunk() > 0 then
@@ -389,8 +364,8 @@ local function getModifiers(player)
     return effectMods
   end
 
-  -- Helper function to get active appearance modifiers
-  local function getAppearanceMods()
+  -- Appearance modifiers detection
+  local function getAppearanceModifiers()
     local appearanceMods = {}
     
     if playerOptions:Hidden() and playerOptions:Hidden() > 0 then
@@ -412,63 +387,60 @@ local function getModifiers(player)
     return appearanceMods
   end
 
-  -- Build the modifiers structure
-  local speedType, speedValue = getSpeedMod()
+  -- Build complete modifiers structure
+  local speedType, speedValue = getSpeedModifier()
   
-  local modifiers = {
+  return {
     speed = {
       type = speedType,
       value = speedValue
     },
-    mini = getMiniPercent(),
+    mini = getMiniPercentage(),
     perspective = getPerspective(),
     noteskin = getNoteskin(),
     turn = getTurnModifier(),
     scroll = getScrollModifier(),
-    disabledWindows = getDisabledWindows(),
-    acceleration = getAccelerationMods(),
-    effect = getEffectMods(),
-    appearance = getAppearanceMods(),
+    disabledWindows = getDisabledTimingWindows(),
+    acceleration = getAccelerationModifiers(),
+    effect = getEffectModifiers(),
+    appearance = getAppearanceModifiers(),
     visualDelay = playerOptions:VisualDelay() and math.floor(playerOptions:VisualDelay() * 1000 + 0.5) or 0
   }
-
-  return modifiers
 end
 
---------------------------------------------------------------------------------------------------
-
-local function SongResultData(player, style)
+-- Data formatting and aggregation functions
+local function buildSongResultData(player, style)
   local pn = ToEnumShortString(player)
-
   local song = GAMESTATE:GetCurrentSong()
 
-  -- Song Data
+  -- Song metadata
   local songInfo = {
-    name        = escapeString(song:GetTranslitFullTitle()),
-    artist      = escapeString(song:GetTranslitArtist()),
-    pack        = escapeString(song:GetGroupName()),
+    name        = escapeJsonString(song:GetTranslitFullTitle()),
+    artist      = escapeJsonString(song:GetTranslitArtist()),
+    pack        = escapeJsonString(song:GetGroupName()),
     length      = string.format("%d:%02d", math.floor(song:MusicLengthSeconds() / 60),
       math.floor(song:MusicLengthSeconds() % 60)),
-    stepartist  = escapeString(GAMESTATE:GetCurrentSteps(player):GetAuthorCredit()),
+    stepartist  = escapeJsonString(GAMESTATE:GetCurrentSteps(player):GetAuthorCredit()),
     difficulty  = GAMESTATE:GetCurrentSteps(player):GetMeter(),
-    description = escapeString(GAMESTATE:GetCurrentSteps(player):GetDescription()),
+    description = escapeJsonString(GAMESTATE:GetCurrentSteps(player):GetDescription()),
     hash        = tostring(SL[pn].Streams.Hash),
-    modifiers   = getModifiers(player)
+    modifiers   = getPlayerModifiers(player)
   }
 
+  -- Performance results
   local resultInfo = {
-    score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
-      "%%", ""),
+    score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub("%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
     grade = STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetGrade(),
-    radar = getRadar(player),
+    radar = getRadarData(player),
   }
 
-
+  -- Gameplay data
   local timingData, worst_window = getTimingData(player)
-  local lifebarInfo = GetLifebarData(player, 1000, 200)
+  local lifebarInfo = getLifebarData(player)
 
-  local data = {
+  -- Combined result
+  return {
     songName = songInfo.name,
     artist = songInfo.artist,
     pack = songInfo.pack,
@@ -488,67 +460,55 @@ local function SongResultData(player, style)
     radar = resultInfo.radar,
     _arrowCloudBodyVersion = "1.0"
   }
-
-  return data
 end
 
 --------------------------------------------------------------------------------------------------
 
-local function CourseResultData(player, style)
+local function buildCourseResultData(player, style)
   local pn = ToEnumShortString(player)
-
   local course = GAMESTATE:GetCurrentCourse()
   local trail = GAMESTATE:GetCurrentTrail(player)
 
-
-
-  -- Course Data
+  -- Course metadata
   local courseInfo = {
-    name        = escapeString(course:GetTranslitFullTitle()),
-    pack        = escapeString(course:GetGroupName()),
+    name        = escapeJsonString(course:GetTranslitFullTitle()),
+    pack        = escapeJsonString(course:GetGroupName()),
     difficulty  = trail:GetMeter(),
-    description = escapeString(course:GetDescription()),
+    description = escapeJsonString(course:GetDescription()),
     entries     = "[",
     hash        = BinaryToHex(CRYPTMAN:SHA1File(course:GetCourseDir())):sub(1, 16),
-    scripter    = escapeString(course:GetScripter()),
-    modifiers   = getModifiers(player)
+    scripter    = escapeJsonString(course:GetScripter()),
+    modifiers   = getPlayerModifiers(player)
   }
 
-
+  -- Build course entries list
   local trailSteps = trail:GetTrailEntries()
   for i in ipairs(trailSteps) do
     courseInfo.entries = courseInfo.entries ..
-        "{name: " ..
-        escapeString(trailSteps[i]:GetSong():GetTranslitFullTitle()) ..
-        ", length: " ..
-        trailSteps[i]:GetSong():MusicLengthSeconds() ..
-        ", artist: " ..
-        escapeString(trailSteps[i]:GetSong():GetTranslitArtist()) ..
-        ", difficulty:  " ..
-        trailSteps[i]:GetSteps():GetMeter() ..
-        "},"                                    -- ", difficulty = " .. trailSteps:GetSteps():GetMeter() ..
+        "{name: " .. escapeJsonString(trailSteps[i]:GetSong():GetTranslitFullTitle()) ..
+        ", length: " .. trailSteps[i]:GetSong():MusicLengthSeconds() ..
+        ", artist: " .. escapeJsonString(trailSteps[i]:GetSong():GetTranslitArtist()) ..
+        ", difficulty: " .. trailSteps[i]:GetSteps():GetMeter() .. "},"
   end
-  -- Remove the last comma and append the closing bracket
+  
+  -- Clean up entries format
   if courseInfo.entries:sub(-1) == "," then
     courseInfo.entries = courseInfo.entries:sub(1, -2)
   end
   courseInfo.entries = courseInfo.entries .. "]"
 
-
-  -- Result Data
+  -- Performance results
   local resultInfo = {
-    --playerName = escapeString(GAMESTATE:GetPlayerDisplayName(player)), -- unnecessary
-    score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
-      "%%", ""),
+    score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub("%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
     grade = STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetGrade(),
-    radar = getRadar(player),
+    radar = getRadarData(player),
   }
 
-  local lifebarInfo = GetLifebarData(player, 1000, 200)
+  local lifebarInfo = getLifebarData(player, 1000, 200)
 
-  -- Return data as a table instead of JSON string
-  local data = {
+  -- Combined result
+  return {
     courseName = courseInfo.name,
     pack = courseInfo.pack,
     entries = courseInfo.entries,
@@ -564,73 +524,49 @@ local function CourseResultData(player, style)
     modifiers = courseInfo.modifiers,
     radar = resultInfo.radar
   }
-
-  return data
 end
 
+-- Module registration and event handlers
+local moduleRegistration = {}
 
---------------------------------------------------------------------------------------------------
-
-local u = {}
-
--- for player in ivalues(GAMESTATE:GetHumanPlayers()) do
---   local sequential_offsets = {}
---   u["ScreenGameplay"] = Def.Actor{
--- 	  JudgmentMessageCommand=function(self, params)
--- 		  if params.Player ~= player then return end
--- 		  if params.HoldNoteScore then return end
-
--- 		  if params.TapNoteOffset then
--- 			  -- If the judgment was a Miss, store the string "Miss" as offset instead of the number 0.
--- 			  -- For all other judgments, store the offset value provided by the engine as a number.
--- 			  local offset = params.TapNoteScore == "TapNoteScore_Miss" and "Miss" or params.TapNoteOffset
-
--- 			  -- Store judgment offsets (including misses) in an indexed table as they occur.
--- 			  -- Also store the CurMusicSeconds for Evaluation's scatter plot.
--- 		  	sequential_offsets[#sequential_offsets+1] = { GAMESTATE:GetSongBeat(), offset }
--- 		  end
--- 	  end,
--- 	  OffCommand=function(self)
--- 		  local storage = SL[ToEnumShortString(player)].Stages.Stats[SL.Global.Stages.PlayedThisGame + 1]
--- 		  storage.sequential_offsets_beat = sequential_offsets
---   	end
---   }
--- end
-
-u["ScreenEvaluationStage"] = Def.Actor {
+moduleRegistration["ScreenEvaluationStage"] = Def.Actor {
   ModuleCommand = function(self)
-    -- single, versus, double
     local style = GAMESTATE:GetCurrentStyle():GetName()
-    if style == "versus" then style = "single" end
+    if style == "versus" then 
+      style = "single" 
+    end
+    
     for player in ivalues(GAMESTATE:GetHumanPlayers()) do
       local partValid, allValid = ValidForGrooveStats(player)
-      local apiKey = readKey(player)
+      local apiKey = readApiKey(player)
+      
       if apiKey ~= nil then
-        local data = SongResultData(player, style)
+        local data = buildSongResultData(player, style)
         local pn = ToEnumShortString(player)
         local hash = tostring(SL[pn].Streams.Hash)
-        sendData(data, apiKey, hash)
+        sendScoreData(data, apiKey, hash)
       end
     end
   end
 }
 
-
-u["ScreenEvaluationNonstop"] = Def.ActorFrame {
+moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
   ModuleCommand = function(self)
     local fixed = GAMESTATE:GetCurrentCourse():AllSongsAreFixed()
     local autogen = GAMESTATE:GetCurrentCourse():IsAutogen()
     local endless = GAMESTATE:GetCurrentCourse():IsEndless()
 
-    -- Would be kinda unfair
+    -- Only process fixed, non-autogen, non-endless courses
     if fixed and not autogen and not endless then
-      -- single, versus, double
       local style = GAMESTATE:GetCurrentStyle():GetName()
-      if style == "versus" then style = "single" end
+      if style == "versus" then 
+        style = "single" 
+      end
+      
       for player in ivalues(GAMESTATE:GetHumanPlayers()) do
-        -- Doesn't return true for courses, but I can use everything else lol
         local partValid, allValid = ValidForGrooveStats(player)
 
+        -- Override course validation logic
         allValid = true
         for i, valid in ipairs(partValid) do
           if i ~= 3 and not valid then
@@ -639,18 +575,16 @@ u["ScreenEvaluationNonstop"] = Def.ActorFrame {
           end
         end
 
-        local apiKey = readKey(player)
+        local apiKey = readApiKey(player)
         if allValid and apiKey ~= nil then
-          -- Different day different data
-          local data = CourseResultData(player, style)
+          local data = buildCourseResultData(player, style)
           local course = GAMESTATE:GetCurrentCourse()
           local hash = BinaryToHex(CRYPTMAN:SHA1File(course:GetCourseDir())):sub(1, 16)
-          sendData(data, apiKey, hash)
+          sendScoreData(data, apiKey, hash)
         end
       end
     end
   end
 }
 
-
-return u
+return moduleRegistration
