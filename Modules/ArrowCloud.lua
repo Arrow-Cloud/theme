@@ -39,34 +39,23 @@ local function readKey(player)
 
   local apiKey
 
-    if not FILEMAN:DoesFileExist(filePath) then
-		-- The file doesn't exist. We will create it for this profile, and then just return.
-		IniFile.WriteFile(filePath, {
-			["ArrowCloud"]={
-				["ApiKey"]="",
-				["Username"]="",
-				["IsPadPlayer"]=0,
-			}
-		})
-	else
-		local contents = IniFile.ReadFile(filePath)
-		for k,v in pairs(contents["ArrowCloud"]) do
-			if k == "ApiKey" then
-                apiKey = v
-            end
-        end
+  if not FILEMAN:DoesFileExist(filePath) then
+    -- The file doesn't exist. We will create it for this profile, and then just return.
+    IniFile.WriteFile(filePath, {
+      ["ArrowCloud"] = {
+        ["ApiKey"] = "",
+      }
+    })
+  else
+    local contents = IniFile.ReadFile(filePath)
+    for k, v in pairs(contents["ArrowCloud"]) do
+      if k == "ApiKey" then
+        apiKey = v
+      end
     end
+  end
 
-		-- Always write the file back to disk to ensure it's up to date with
-		-- any new fields that may have been added.
--- 		IniFile.WriteFile(path, {
--- 			["ArrowCloud"]={
--- 				["ApiKey"]=SL[pn].ApiKey,
--- 				["Username"]=SL[pn].GrooveStatsUsername,
--- 				["IsPadPlayer"]=SL[pn].IsPadPlayer and "1" or "0",
--- 			}
--- 		})
-    return apiKey
+  return apiKey
 end
 
 
@@ -169,7 +158,7 @@ local function GetLifebarData(player, GraphWidth, GraphHeight)
 
   local lifebarData = {}
   local playerStageStats = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
-  local lifeRecord = playerStageStats:GetLifeRecord(lastSecond, 100)   -- Use lastSecond and default samples
+  local lifeRecord = playerStageStats:GetLifeRecord(lastSecond, 100) -- Use lastSecond and default samples
 
   for i, lifebarValue in ipairs(lifeRecord) do
     local stepSecond = chartStartSecond + (i - 1) * (duration / #lifeRecord)
@@ -199,7 +188,7 @@ end
 -- Not interested in other Tech notation (at least for now lol)
 local function getRadar(player)
   local pss = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
-  local RadarCategories = {'Holds', 'Mines', 'Rolls' }
+  local RadarCategories = { 'Holds', 'Mines', 'Rolls' }
 
   local radarValues = {}
 
@@ -309,7 +298,7 @@ local function SongResultData(player, style)
   local resultInfo = {
     -- playerName = escapeString(GAMESTATE:GetPlayerDisplayName(player)), -- unnecessary
     score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
-    "%%", ""),
+      "%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
     grade = STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetGrade(),
     radar = getRadar(player),
@@ -371,14 +360,15 @@ local function CourseResultData(player, style)
   local trailSteps = trail:GetTrailEntries()
   for i in ipairs(trailSteps) do
     courseInfo.entries = courseInfo.entries ..
-    "{name: " ..
-    escapeString(trailSteps[i]:GetSong():GetTranslitFullTitle()) ..
-    ", length: " ..
-    trailSteps[i]:GetSong():MusicLengthSeconds() ..
-    ", artist: " ..
-    escapeString(trailSteps[i]:GetSong():GetTranslitArtist()) ..
-    ", difficulty:  " ..
-    trailSteps[i]:GetSteps():GetMeter() .. "},"                                                                                                                                                                                                                                                                                               -- ", difficulty = " .. trailSteps:GetSteps():GetMeter() ..
+        "{name: " ..
+        escapeString(trailSteps[i]:GetSong():GetTranslitFullTitle()) ..
+        ", length: " ..
+        trailSteps[i]:GetSong():MusicLengthSeconds() ..
+        ", artist: " ..
+        escapeString(trailSteps[i]:GetSong():GetTranslitArtist()) ..
+        ", difficulty:  " ..
+        trailSteps[i]:GetSteps():GetMeter() ..
+        "},"                                    -- ", difficulty = " .. trailSteps:GetSteps():GetMeter() ..
   end
   -- Remove the last comma and append the closing bracket
   if courseInfo.entries:sub(-1) == "," then
@@ -391,7 +381,7 @@ local function CourseResultData(player, style)
   local resultInfo = {
     --playerName = escapeString(GAMESTATE:GetPlayerDisplayName(player)), -- unnecessary
     score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
-    "%%", ""),
+      "%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
     grade = STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetGrade(),
     radar = getRadar(player),
