@@ -206,68 +206,230 @@ end
 
 local function getModifiers(player)
   local pn = ToEnumShortString(player)
-
   local playerOptions = GAMESTATE:GetPlayerState(pn):GetPlayerOptions("ModsLevel_Preferred")
 
-  -- Speed modifiers
-  local cmod = playerOptions:CMod()
-  local mmod = playerOptions:MMod()
-  local xmod = playerOptions:XMod()
-
-  -- Format xmod to 2 decimal places if it exists
-  if xmod ~= nil then
-    xmod = tonumber(("%.2f"):format(xmod))
+  -- Helper function to get speed mod type and value
+  local function getSpeedMod()
+    local cmod, cmodeSpeed = playerOptions:CMod()
+    local mmod, mmodSpeed = playerOptions:MMod()
+    local xmod, xmodSpeed = playerOptions:XMod()
+    
+    if cmod then
+      return "C", cmod
+    elseif mmod then
+      return "M", mmod
+    elseif xmod then
+      return "X", tonumber(("%.2f"):format(xmod))
+    else
+      return "X", 1.0 -- Default
+    end
   end
 
-  -- Mini percentage (convert to percentage and round)
-  local mini = playerOptions:Mini()
-  local miniPercent = nil
-  if mini ~= nil then
-    miniPercent = math.floor(100 * mini + 0.5)
+  -- Helper function to get mini percentage
+  local function getMiniPercent()
+    local mini = playerOptions:Mini()
+    if mini and mini > 0 then
+      return math.floor(100 * mini + 0.5)
+    end
+    return 100 -- Default 100%
   end
 
-  -- Visual delay in milliseconds
-  local visualDelay = playerOptions:VisualDelay()
-  local visualDelayMs = nil
-  if visualDelay ~= nil then
-    visualDelayMs = math.floor(1000 * visualDelay + 0.5)
+  -- Helper function to determine perspective
+  local function getPerspective()
+    if playerOptions:Overhead() then
+      return "Overhead"
+    elseif playerOptions:Hallway() then
+      return "Hallway"
+    elseif playerOptions:Distant() then
+      return "Distant"
+    elseif playerOptions:Incoming() then
+      return "Incoming"
+    elseif playerOptions:Space() then
+      return "Space"
+    else
+      return "Overhead" -- Default
+    end
   end
 
-  -- Turn modifiers
-  local mirror = playerOptions:Mirror()
-  local left = playerOptions:Left()
-  local right = playerOptions:Right()
-  local shuffle = playerOptions:Shuffle()
-  --local turnnone = playerOptions:TurnNone() -- This doesn't seem to work in ITGMania
-
-  -- Determine which turn modifier is active (only one should be true)
-  local turnModifier = nil
-  if mirror then
-    turnModifier = "Mirror"
-  elseif left then
-    turnModifier = "Left"
-  elseif right then
-    turnModifier = "Right"
-  elseif shuffle then
-    turnModifier = "Shuffle"
-  else
-    turnModifier = "None" -- or could be nil
+  -- Helper function to get noteskin
+  local function getNoteskin()
+    local noteskin = playerOptions:NoteSkin()
+    return noteskin or "default"
   end
 
-  -- Return structured data
+  -- Helper function to determine turn modifier
+  local function getTurnModifier()
+    if playerOptions:Mirror() then
+      return "Mirror"
+    elseif playerOptions:Left() then
+      return "Left"
+    elseif playerOptions:Right() then
+      return "Right"
+    elseif playerOptions:LRMirror() then
+      return "LR-Mirror"
+    elseif playerOptions:UDMirror() then
+      return "UD-Mirror"
+    elseif playerOptions:Shuffle() then
+      return "Shuffle"
+    elseif playerOptions:SoftShuffle() then
+      return "Shuffle" -- Soft shuffle is a variant of shuffle
+    elseif playerOptions:SuperShuffle() then
+      return "Shuffle" -- Super shuffle is a variant of shuffle
+    elseif playerOptions:HyperShuffle() then
+      return "Shuffle" -- Hyper shuffle is a variant of shuffle
+    else
+      return "None"
+    end
+  end
+
+  -- Helper function to get active scroll modifier
+  local function getScrollModifier()
+    if playerOptions:Reverse() and playerOptions:Reverse() > 0.5 then
+      return "Reverse"
+    elseif playerOptions:Split() and playerOptions:Split() > 0.5 then
+      return "Split"
+    elseif playerOptions:Alternate() and playerOptions:Alternate() > 0.5 then
+      return "Alternate"
+    elseif playerOptions:Cross() and playerOptions:Cross() > 0.5 then
+      return "Cross"
+    elseif playerOptions:Centered() and playerOptions:Centered() > 0.5 then
+      return "Centered"
+    else
+      return nil
+    end
+  end
+
+  -- Helper function to get disabled timing windows
+  local function getDisabledWindows()
+    local disabledWindows = playerOptions:GetDisabledTimingWindows()
+    if not disabledWindows or #disabledWindows == 0 then
+      return "None"
+    end
+    
+    local windowNames = {}
+    for _, window in ipairs(disabledWindows) do
+      if window == "TimingWindow_W5" then
+        table.insert(windowNames, "Way Offs")
+      elseif window == "TimingWindow_W4" then
+        table.insert(windowNames, "Decents")
+      elseif window == "TimingWindow_W1" then
+        table.insert(windowNames, "Fantastics")
+      elseif window == "TimingWindow_W2" then
+        table.insert(windowNames, "Excellents")
+      end
+    end
+    
+    if #windowNames == 0 then
+      return "None"
+    elseif #windowNames == 1 then
+      return windowNames[1]
+    else
+      return table.concat(windowNames, " + ")
+    end
+  end
+
+  -- Helper function to get active acceleration modifiers
+  local function getAccelerationMods()
+    local accelMods = {}
+    
+    if playerOptions:Boost() and playerOptions:Boost() > 0 then
+      table.insert(accelMods, "Boost")
+    end
+    if playerOptions:Brake() and playerOptions:Brake() > 0 then
+      table.insert(accelMods, "Brake")
+    end
+    if playerOptions:Wave() and playerOptions:Wave() > 0 then
+      table.insert(accelMods, "Wave")
+    end
+    if playerOptions:Expand() and playerOptions:Expand() > 0 then
+      table.insert(accelMods, "Expand")
+    end
+    if playerOptions:Boomerang() and playerOptions:Boomerang() > 0 then
+      table.insert(accelMods, "Boomerang")
+    end
+    
+    return accelMods
+  end
+
+  -- Helper function to get active effect modifiers
+  local function getEffectMods()
+    local effectMods = {}
+    
+    if playerOptions:Drunk() and playerOptions:Drunk() > 0 then
+      table.insert(effectMods, "Drunk")
+    end
+    if playerOptions:Dizzy() and playerOptions:Dizzy() > 0 then
+      table.insert(effectMods, "Dizzy")
+    end
+    if playerOptions:Confusion() and playerOptions:Confusion() > 0 then
+      table.insert(effectMods, "Confusion")
+    end
+    if playerOptions:Big() then
+      table.insert(effectMods, "Big")
+    end
+    if playerOptions:Flip() and playerOptions:Flip() > 0 then
+      table.insert(effectMods, "Flip")
+    end
+    if playerOptions:Invert() and playerOptions:Invert() > 0 then
+      table.insert(effectMods, "Invert")
+    end
+    if playerOptions:Tornado() and playerOptions:Tornado() > 0 then
+      table.insert(effectMods, "Tornado")
+    end
+    if playerOptions:Tipsy() and playerOptions:Tipsy() > 0 then
+      table.insert(effectMods, "Tipsy")
+    end
+    if playerOptions:Bumpy() and playerOptions:Bumpy() > 0 then
+      table.insert(effectMods, "Bumpy")
+    end
+    if playerOptions:Beat() and playerOptions:Beat() > 0 then
+      table.insert(effectMods, "Beat")
+    end
+    
+    return effectMods
+  end
+
+  -- Helper function to get active appearance modifiers
+  local function getAppearanceMods()
+    local appearanceMods = {}
+    
+    if playerOptions:Hidden() and playerOptions:Hidden() > 0 then
+      table.insert(appearanceMods, "Hidden")
+    end
+    if playerOptions:Sudden() and playerOptions:Sudden() > 0 then
+      table.insert(appearanceMods, "Sudden")
+    end
+    if playerOptions:Stealth() and playerOptions:Stealth() > 0 then
+      table.insert(appearanceMods, "Stealth")
+    end
+    if playerOptions:Blink() and playerOptions:Blink() > 0 then
+      table.insert(appearanceMods, "Blink")
+    end
+    if playerOptions:RandomVanish() and playerOptions:RandomVanish() > 0 then
+      table.insert(appearanceMods, "R.Vanish")
+    end
+    
+    return appearanceMods
+  end
+
+  -- Build the modifiers structure
+  local speedType, speedValue = getSpeedMod()
+  
   local modifiers = {
     speed = {
-      cmod = cmod,
-      mmod = mmod,
-      xmod = xmod
+      type = speedType,
+      value = speedValue
     },
-    mini = miniPercent,
-    visualDelay = visualDelayMs,
-    turn = turnModifier
-    -- Future modifiers can be easily added here:
-    -- blender = blender,
-    -- lrMirror = lrMirror,
-    -- udMirror = udMirror
+    mini = getMiniPercent(),
+    perspective = getPerspective(),
+    noteskin = getNoteskin(),
+    turn = getTurnModifier(),
+    scroll = getScrollModifier(),
+    disabledWindows = getDisabledWindows(),
+    acceleration = getAccelerationMods(),
+    effect = getEffectMods(),
+    appearance = getAppearanceMods(),
+    visualDelay = playerOptions:VisualDelay() and math.floor(playerOptions:VisualDelay() * 1000 + 0.5) or 0
   }
 
   return modifiers
@@ -294,9 +456,7 @@ local function SongResultData(player, style)
     modifiers   = getModifiers(player)
   }
 
-  -- Result Data
   local resultInfo = {
-    -- playerName = escapeString(GAMESTATE:GetPlayerDisplayName(player)), -- unnecessary
     score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
       "%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
@@ -305,12 +465,9 @@ local function SongResultData(player, style)
   }
 
 
-  -- local scatterplotData, worst_window = getScatterplotData(player, 1000, 200)
   local timingData, worst_window = getTimingData(player)
-
   local lifebarInfo = GetLifebarData(player, 1000, 200)
 
-  -- Return data as a table instead of JSON string
   local data = {
     songName = songInfo.name,
     artist = songInfo.artist,
@@ -328,7 +485,8 @@ local function SongResultData(player, style)
     worstWindow = worst_window,
     style = style,
     modifiers = songInfo.modifiers,
-    radar = resultInfo.radar
+    radar = resultInfo.radar,
+    _arrowCloudBodyVersion = "1.0"
   }
 
   return data
