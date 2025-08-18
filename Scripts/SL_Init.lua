@@ -554,18 +554,3 @@ function InitializeSimplyLove()
 end
 
 InitializeSimplyLove()
-
--- Ensure ArrowCloud helper is loaded (it may not auto-load depending on engine script loading rules)
-if ArrowCloudRequest == nil then
-	local ac_path = THEME:GetCurrentThemeDirectory() .. "Scripts/SL-Helpers-ArrowCloud.lua"
-	if FILEMAN:DoesFileExist(ac_path) then
-		dofile(ac_path)
-		if ArrowCloudRequest == nil then
-			SM("ArrowCloud helper load attempted but ArrowCloudRequest still nil")
-		else
-			SM("ArrowCloud helper loaded explicitly")
-		end
-	else
-		SM("ArrowCloud helper script missing at " .. ac_path)
-	end
-end
