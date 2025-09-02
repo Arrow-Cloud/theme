@@ -35,11 +35,6 @@ local function AppendJSONLine(path, jsonLine)
 end
 
 ArrowCloudRequest = function(chartHash)
-	-- Debug: inspect current config state
-	SM("ArrowCloud debug: enter chartHash="..tostring(chartHash)
-		.." SL="..tostring(SL)
-		.." SL.ArrowCloud="..tostring(SL and SL.ArrowCloud)
-		.." Enabled="..tostring(SL and SL.ArrowCloud and SL.ArrowCloud.Enabled))
 
 	-- If config table disappeared (e.g. SL reassigned), recreate minimal default
 	if SL and SL.ArrowCloud == nil then
@@ -49,7 +44,7 @@ ArrowCloudRequest = function(chartHash)
 			RequestTimeout = 5,
 			LogPath = THEME:GetCurrentThemeDirectory() .. "Other/ArrowCloud_Responses.ndjson"
 		}
-		SM("ArrowCloud debug: reinitialized missing SL.ArrowCloud table")
+		-- silently reinitialize if missing
 	end
 
 	if not SL.ArrowCloud or not SL.ArrowCloud.Enabled then
@@ -77,8 +72,7 @@ ArrowCloudRequest = function(chartHash)
 		end
 	end
 
-	SM("ArrowCloud: requesting leaderboards for hash=" .. chartHash .. (masked and (" key="..masked) or " (no key)") )
-	SM("ArrowCloud debug: URL=" .. SL.ArrowCloud.BaseURL .. "/v1/chart/" .. chartHash .. "/leaderboards" )
+	-- Request (debug output removed for cleanliness)
 
 	NETWORK:HttpRequest{
 		url = SL.ArrowCloud.BaseURL .. "/v1/chart/" .. chartHash .. "/leaderboards",
