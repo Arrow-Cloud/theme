@@ -396,23 +396,18 @@ local ArrowCloudRequestProcessor = function(res)
 	if not ok or type(parsed) ~= "table" then return end
 	if type(parsed.leaderboards) ~= "table" then return end
 
-	-- Map ArrowCloud types to style indices (5..7)
+	-- Map ArrowCloud types to style indices (5..7); only process what the API returned.
 	local index_map = { ITG = 5, EX = 6, SuperEX = 7 }
-	local seen = { ITG=false, EX=false, SuperEX=false }
 	for _, board in ipairs(parsed.leaderboards) do
 		local style_index = index_map[board.type]
 		if style_index and all_data[style_index] then
-			seen[board.type] = true
-			-- Processing each ArrowCloud board
 			local isExType = (board.type == "EX" or board.type == "SuperEX")
-			-- Always seed a placeholder so empty leaderboards show "No Scores" like GS boards
-			SetScoreData(style_index, 1, "", "No Scores", "", false, false, false, isExType)
 			local slot = 1
-			local hadScores = false
+			local any = false
 			if type(board.scores) == "table" then
 				for _, entry in ipairs(board.scores) do
 					if slot > NumEntries then break end
-					hadScores = true
+					any = true
 					local rank = tostring(entry.rank or "")
 					local name = tostring(entry.alias or "--")
 					local score = tostring(entry.score or "")
@@ -420,20 +415,13 @@ local ArrowCloudRequestProcessor = function(res)
 					slot = slot + 1
 				end
 			end
-			-- If we had real scores, any unused rows after the last actual entry become blanks; if we had none, slot is still 1 so start from 2.
-			for i=math.max( (hadScores and slot or 2), slot), NumEntries do
-				SetScoreData(style_index, i, "", "", "", false, false, false, isExType)
+			if not any then
+				-- Present but empty leaderboard -> show No Scores
+				SetScoreData(style_index, 1, "", "No Scores", "", false, false, false, isExType)
+				slot = 2
 			end
-		end
-	end
-
-	-- Add placeholders for any missing ArrowCloud leaderboard types so they rotate with "No Scores".
-	for lb_type, data_idx in pairs(index_map) do
-		if not seen[lb_type] then
-			local isExType = (lb_type ~= "ITG") -- EX & SuperEX treated as EX coloring
-			SetScoreData(data_idx, 1, "", "No Scores", "", false, false, false, isExType)
-			for i=2, NumEntries do
-				SetScoreData(data_idx, i, "", "", "", false, false, false, isExType)
+			for i=slot, NumEntries do
+				SetScoreData(style_index, i, "", "", "", false, false, false, isExType)
 			end
 		end
 	end
