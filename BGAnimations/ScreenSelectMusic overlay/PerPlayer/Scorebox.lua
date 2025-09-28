@@ -16,11 +16,30 @@ if gsUnavailable and arrowcloudUnavailable then return end
 local n = player==PLAYER_1 and "1" or "2"
 local IsNotWide = (GetScreenAspectRatio() < 16/9)
 local NoteFieldIsCentered = (GetNotefieldX(player) == _screen.cx)
-local NumEntries = 5
+-- GrooveStats shows 5 rows; ArrowCloud now returns 7. We render 7 rows total
+-- (GS will leave rows 6-7 blank) to keep the layout simple and consistent.
+local NumEntries = 7
 
 local border = 5
 local width = 162
+-- Keep original box height so GS visuals are unchanged; we'll compress text for AC
 local height = 80
+
+-- Row display policy: GS/events show 5 rows; ArrowCloud shows 7 within same height
+local GS_ROWS = 5
+local AC_ROWS = 7
+local function RowsForStyle(style)
+	return (style >= 4) and AC_ROWS or GS_ROWS
+end
+local function RowSpacingForStyle(style)
+	return height / RowsForStyle(style)
+end
+local function TextZoomForStyle(style)
+	return (style >= 4) and 0.75 or 0.87
+end
+local function CrownZoomForStyle(style)
+	return (style >= 4) and 0.075 or 0.09
+end
 
 local cur_style = 0
 -- We reserve style indices:
@@ -92,7 +111,7 @@ local HasData = function(idx)
 end
 
 local SetScoreData = function(data_idx, score_idx, rank, name, score, isSelf, isRival, isFail, isEx)
-	if score_idx > 5 then return end
+	if score_idx > NumEntries then return end
 	all_data[data_idx].has_data = true
 
 	local score_data = all_data[data_idx]["scores"][score_idx]
@@ -218,7 +237,7 @@ local LeaderboardRequestProcessor = function(res, master)
 						end
 					end
 					numEntries = numEntries + 1
-					for i=math.max(2,numEntries),5,1 do
+					for i=math.max(2,numEntries),NumEntries,1 do
 						SetScoreData(1, i, "", "", "", "", "", "", true)
 					end
 				end
@@ -244,7 +263,7 @@ local LeaderboardRequestProcessor = function(res, master)
 						end
 					end
 					numEntries = numEntries + 1
-					for i=math.max(2,numEntries),5,1 do
+					for i=math.max(2,numEntries),NumEntries,1 do
 						SetScoreData(2, i, "", "", "", "", "", "", boogie_ex)
 					end
 				end
@@ -271,7 +290,7 @@ local LeaderboardRequestProcessor = function(res, master)
 						end
 					end
 					numEntries = numEntries + 1
-					for i=math.max(2,numEntries),5,1 do
+					for i=math.max(2,numEntries),NumEntries,1 do
 						SetScoreData(1, i, "", "", "", "", "", "", boogie_ex)
 					end
 				end
@@ -297,7 +316,7 @@ local LeaderboardRequestProcessor = function(res, master)
 						end
 					end
 					numEntries = numEntries + 1
-					for i=math.max(2,numEntries),5,1 do
+					for i=math.max(2,numEntries),NumEntries,1 do
 						SetScoreData(2, i, "", "", "", "", "", "", true)
 					end
 				end
@@ -329,7 +348,7 @@ local LeaderboardRequestProcessor = function(res, master)
 						end
 					end
 					numEntries = numEntries + 1
-					for i=numEntries,5,1 do
+					for i=numEntries,NumEntries,1 do
 						SetScoreData(3, i,
 										"",
 										"",
@@ -368,7 +387,7 @@ local LeaderboardRequestProcessor = function(res, master)
 						end
 					end
 					numEntries = numEntries + 1
-					for i=numEntries,5,1 do
+					for i=numEntries,NumEntries,1 do
 						SetScoreData(4, i,
 										"",
 										"",
@@ -411,7 +430,10 @@ local ArrowCloudRequestProcessor = function(res)
 					local rank = tostring(entry.rank or "")
 					local name = tostring(entry.alias or "--")
 					local score = tostring(entry.score or "")
-					SetScoreData(style_index, slot, rank, name, score, false, false, false, isExType)
+					local isSelf = not not entry.isSelf
+					local isRival = not not entry.isRival
+					-- ArrowCloud scores are already formatted server-side; pass through.
+					SetScoreData(style_index, slot, rank, name, score, isSelf, isRival, false, isExType)
 					slot = slot + 1
 				end
 			end
@@ -498,21 +520,12 @@ local af = Def.ActorFrame{
 
 		self:finishtweening()
 		
-		self:GetChild("Name1"):visible(true)
-		self:GetChild("Name2"):visible(true)
-		self:GetChild("Name3"):visible(true)
-		self:GetChild("Name4"):visible(true)
-		self:GetChild("Name5"):visible(true)
-		self:GetChild("Score1"):visible(true)
-		self:GetChild("Score2"):visible(true)
-		self:GetChild("Score3"):visible(true)
-		self:GetChild("Score4"):visible(true)
-		self:GetChild("Score5"):visible(true)
-		self:GetChild("Rank1"):visible(true)
-		self:GetChild("Rank2"):visible(true)
-		self:GetChild("Rank3"):visible(true)
-		self:GetChild("Rank4"):visible(true)
-		self:GetChild("Rank5"):visible(true)
+		for i=1,NumEntries do
+			local show = (i <= RowsForStyle(cur_style))
+			self:GetChild("Name"..i):visible(show)
+			self:GetChild("Score"..i):visible(show)
+			self:GetChild("Rank"..i):visible(show)
+		end
 		self:GetChild("GrooveStatsLogo"):stopeffect()
 		self:GetChild("BoogieStatsLogo"):stopeffect()
 		self:GetChild("BoogieStatsEXLogo"):stopeffect()
@@ -579,8 +592,9 @@ local af = Def.ActorFrame{
 		MakeRequestCommand=function(self)				
 			local sendRequest = false
 			local headers = {}
+			-- GrooveStats remains at 5 results regardless of AC's 7
 			local query = {
-				maxLeaderboardResults=NumEntries,
+				maxLeaderboardResults=GS_ROWS,
 			}
 
 			if SL[pn].ApiKey ~= "" and SL[pn].Streams.Hash ~= "" then
@@ -631,21 +645,20 @@ local af = Def.ActorFrame{
 				ResetAllData()
 				
 				self:GetParent():visible(true)
-				self:GetParent():GetChild("Name1"):settext(""):visible(false)
-				self:GetParent():GetChild("Name2"):settext(""):visible(false)
-				self:GetParent():GetChild("Name3"):settext(""):visible(false)
-				self:GetParent():GetChild("Name4"):settext(""):visible(false)
-				self:GetParent():GetChild("Name5"):settext(""):visible(false)
-				self:GetParent():GetChild("Score1"):settext(""):visible(false)
-				self:GetParent():GetChild("Score2"):settext(""):visible(false)
-				self:GetParent():GetChild("Score3"):settext(""):visible(false)
-				self:GetParent():GetChild("Score4"):settext(""):visible(false)
-				self:GetParent():GetChild("Score5"):settext(""):visible(false)
-				self:GetParent():GetChild("Rank1"):diffusealpha(0):visible(false)
-				self:GetParent():GetChild("Rank2"):settext(""):visible(false)
-				self:GetParent():GetChild("Rank3"):settext(""):visible(false)
-				self:GetParent():GetChild("Rank4"):settext(""):visible(false)
-				self:GetParent():GetChild("Rank5"):settext(""):visible(false)
+				for i=1,NumEntries do
+					local parent = self:GetParent()
+					parent:GetChild("Name"..i):settext(""):visible(false)
+					parent:GetChild("Score"..i):settext(""):visible(false)
+					local rankChild = parent:GetChild("Rank"..i)
+					if rankChild then
+						if i == 1 then
+							-- Crown sprite: no settext
+							rankChild:diffusealpha(0):visible(false)
+						else
+							rankChild:settext(""):visible(false)
+						end
+					end
+				end
 				self:GetParent():GetChild("GrooveStatsLogo"):visible(true):diffusealpha(0.5):glowshift({color("#C8FFFF"), color("#6BF0FF")})
 				self:GetParent():GetChild("BoogieStatsLogo"):visible(false)
 				self:GetParent():GetChild("BoogieStatsEXLogo"):visible(false)
@@ -905,9 +918,16 @@ for i=1,NumEntries do
 				self:linear(transition_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
 			end,
 			SetScoreboxCommand=function(self)
+				local displayRows = RowsForStyle(cur_style)
+				if i > displayRows then self:visible(false) return end
+				local spacing = RowSpacingForStyle(cur_style)
+				local yy = -height/2 + spacing * i - spacing/2
+				self:y(yy):zoom(CrownZoomForStyle(cur_style)):visible(true)
 				local score = all_data[cur_style+1]["scores"][i]
 				if score.rank ~= "" then
 					self:linear(transition_seconds/2):diffusealpha(1)
+				else
+					self:diffusealpha(0)
 				end
 			end,
 			ResetCommand=function(self) self:stoptweening() end,
@@ -937,6 +957,11 @@ for i=1,NumEntries do
 				self:linear(transition_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
 			end,
 			SetScoreboxCommand=function(self)
+				local displayRows = RowsForStyle(cur_style)
+				if i > displayRows then self:visible(false) return end
+				local spacing = RowSpacingForStyle(cur_style)
+				local yy = -height/2 + spacing * i - spacing/2
+				self:y(yy):zoom(TextZoomForStyle(cur_style)):visible(true)
 				local score = all_data[cur_style+1]["scores"][i]
 				local clr = Color.White
 				if score.isSelf then
@@ -975,6 +1000,11 @@ for i=1,NumEntries do
 			self:linear(transition_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
 		end,
 		SetScoreboxCommand=function(self)
+			local displayRows = RowsForStyle(cur_style)
+			if i > displayRows then self:visible(false) return end
+			local spacing = RowSpacingForStyle(cur_style)
+			local yy = -height/2 + spacing * i - spacing/2
+			self:y(yy):zoom(TextZoomForStyle(cur_style)):visible(true)
 			local score = all_data[cur_style+1]["scores"][i]
 			local clr = Color.White
 			if score.isSelf then
@@ -1012,6 +1042,11 @@ for i=1,NumEntries do
 			self:linear(transition_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
 		end,
 		SetScoreboxCommand=function(self)
+			local displayRows = RowsForStyle(cur_style)
+			if i > displayRows then self:visible(false) return end
+			local spacing = RowSpacingForStyle(cur_style)
+			local yy = -height/2 + spacing * i - spacing/2
+			self:y(yy):zoom(TextZoomForStyle(cur_style)):visible(true)
 			local score = all_data[cur_style+1]["scores"][i]
 			local clr = Color.White
 			if score.isFail then
