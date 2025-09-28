@@ -1,4 +1,4 @@
--- get the machine_profile now at file init; no need to keep fetching with each SetCommand
+ -- get the machine_profile now at file init; no need to keep fetching with each SetCommand
 local machine_profile = PROFILEMAN:GetMachineProfile()
 
 -- the height of the footer is defined in ./Graphics/_footer.lua, but we'll
@@ -369,6 +369,15 @@ af[#af+1] = RequestResponseActor(17, 50)..{
 
 		-- Only send the request if it's applicable.
 		if sendRequest then
+			-- ArrowCloud minimal logging: invoke for each player hash we are about to request
+			if SL and SL.ArrowCloud and SL.ArrowCloud.Enabled then
+				for i=1,2 do
+					local pn = "P"..i
+					if SL[pn] and SL[pn].Streams and SL[pn].Streams.Hash and #SL[pn].Streams.Hash>0 then
+						ArrowCloudRequest(SL[pn].Streams.Hash)
+					end
+				end
+			end
 			requestCacheKey = CRYPTMAN:SHA256String(requestCacheKey.."-player-scores")
 			local params = {requestCacheKey=requestCacheKey, master=master}
 			RemoveStaleCachedRequests()
