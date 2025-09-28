@@ -10,9 +10,131 @@ local ArrowCloud = {}
 local BASE_URL = "https://b4mdyahpki.execute-api.us-east-2.amazonaws.com/prod"
 local MODULE_TAG = "[ArrowCloud-SLmodule]"
 
+-- luacheck: globals GAMESTATE PREFSMAN THEME SL PLAYER_1 PLAYER_2 STATSMAN CRYPTMAN PROFILEMAN IniFile NETWORK IsHumanPlayer FormatPercentScore CalculateExScore GetTimingWindow GetWorstJudgment BinaryToHex clamp Trace ToEnumShortString ivalues
+
+-- forward declaration so isEligible can reference it
+local debugPrint
+
+-- Guarded stub declarations (only for tooling; real objects provided by engine at runtime)
+if not GAMESTATE then GAMESTATE = {} end
+if not PREFSMAN then PREFSMAN = { GetPreference=function(...) return 0 end } end
+if not THEME then THEME = { GetMetric=function(...) return 0 end } end
+if not SL then SL = { Global = { GameMode = "ITG", ActiveModifiers = { MusicRate = 1 }, Stages = { PlayedThisGame = 0 } }, P1 = { ActiveModifiers={TimingWindows={true,true,true,true,true}}}, P2={ ActiveModifiers={TimingWindows={true,true,true,true,true}}} } end
+if not PLAYER_1 then PLAYER_1 = 0 end
+if not PLAYER_2 then PLAYER_2 = 1 end
+if not STATSMAN then STATSMAN = { GetCurStageStats=function(...) return { GetPlayerStageStats=function(...) return { GetPercentDancePoints=function(...) return 0 end, GetGrade=function(...) return "Grade_Tier01" end, GetLifeRecord=function(...) return {} end, GetRadarActual=function(...) return { GetValue=function(...) return 0 end } end, GetRadarPossible=function(...) return { GetValue=function(...) return 0 end } end } end } end } end
+if not CRYPTMAN then CRYPTMAN = { SHA1File=function(...) return "" end } end
+if not PROFILEMAN then PROFILEMAN = { GetProfileDir=function(...) return "" end } end
+if not IniFile then IniFile = { WriteFile=function(...) end, ReadFile=function(...) return {} end } end
+if not NETWORK then NETWORK = { HttpRequest=function(...) return {} end } end
+if not IsHumanPlayer then IsHumanPlayer = function(...) return true end end
+if not FormatPercentScore then FormatPercentScore = function(...) return "0%" end end
+if not CalculateExScore then CalculateExScore = function(...) return 0 end end
+if not GetTimingWindow then GetTimingWindow = function(...) return 0 end end
+if not GetWorstJudgment then GetWorstJudgment = function(...) return 0 end end
+if not BinaryToHex then BinaryToHex = function(...) return "" end end
+if not clamp then clamp = function(v,min,max) if v<min then return min elseif v>max then return max else return v end end end
+if not Trace then Trace = function(...) end end
+if not ToEnumShortString then ToEnumShortString = function(v, ...) if v==PLAYER_1 then return "P1" elseif v==PLAYER_2 then return "P2" else return tostring(v) end end end
+if not ivalues then ivalues = function(t, ...) local i=0 return function() i=i+1 if t[i]~=nil then return t[i] end end end end
+if not FILEMAN then FILEMAN = { DoesFileExist=function(...) return false end } end
+
+-- -------------------------------------------------------------------------------------------------
+-- Eligibility checks (refactored from ValidForGrooveStats in SL-Helpers-GrooveStats.lua)
+-- We only submit scores when a collection of sanity conditions are satisfied.  These are
+-- intended to prevent accidental submission of obviously invalid scores – not to be
+-- tamper‑proof.  This version is self‑contained for ArrowCloud usage and returns a rich result
+-- for future UI/telemetry use.
+--
+-- ArrowCloud.isEligible(player, opts?) -> {
+--    ok = boolean,
+--    checks = { { id=string, pass=boolean, desc=string } ... },
+--    failures = { <id>, ... }
+-- }
+-- opts.ignoreCourse (boolean)  : if true, we will not invalidate due to course mode.
+-- opts.logger (function(msg))  : optional logger (defaults to debugPrint)
+-- -------------------------------------------------------------------------------------------------
+
+function ArrowCloud.isEligible(player, opts)
+  opts = opts or {}
+  local log = opts.logger or debugPrint
+  local pn = ToEnumShortString(player)
+
+  local results = { ok = true, checks = {}, failures = {} }
+
+  local function addCheck(id, desc, pass)
+    table.insert(results.checks, { id=id, desc=desc, pass=pass })
+    if not pass then
+      results.ok = false
+      table.insert(results.failures, id)
+    end
+  end
+
+  -- 1. Game must be dance
+  addCheck("game", "Game type must be 'dance'", GAMESTATE:GetCurrentGame():GetName() == "dance")
+
+  -- 2. Style not solo (GrooveStats / ArrowCloud currently single/versus/double only)
+  local styleName = GAMESTATE:GetCurrentStyle():GetName()
+  addCheck("style", "Style must not be 'solo'", styleName ~= "solo")
+
+  -- 3. Not course mode (can be optionally ignored by caller – e.g. for Nonstop handler)
+  if not opts.ignoreCourse then
+    addCheck("course", "Not a course/nonstop/endless chart", not GAMESTATE:IsCourseMode())
+  else
+    addCheck("course", "Course mode ignored (override)", true)
+  end
+
+  -- 4. GameMode must be ITG (ArrowCloud currently tailored to ITG / FA+ scoring expectations)
+  addCheck("gamemode", "GameMode must be ITG", SL.Global.GameMode == "ITG")
+
+  -- 5. LifeDifficultyScale <= 1 (standard or harder)
+  addCheck("lifediff", "LifeDifficultyScale must be standard or harder (<=1)", PREFSMAN:GetPreference("LifeDifficultyScale") <= 1)
+
+  -- TimingWindowScale and granular timing window metric validation intentionally omitted:
+  -- backend recomputes and validates precise timing data.
+
+  -- 8. Rate between 0.10x and 10.00x (inclusive)
+  -- This is super extreme ends of what will ever actually be done. The backend actually gates
+  -- this on a per leaderboard basis and today all leaderboards require exactly 1.0 rate, so 
+  -- this is simply a future looking idea.
+  local rate = SL.Global.ActiveModifiers.MusicRate * 100
+  addCheck("rate", "Music Rate must be 0.10x - 10.00x", rate >= 10 and rate <= 1000)
+
+  -- Player options for note removal/addition
+  local po = GAMESTATE:GetPlayerState(player):GetPlayerOptions("ModsLevel_Preferred")
+  local removes = (po:Little() or po:NoHolds() or po:NoStretch() or po:NoHands() or po:NoJumps() or po:NoFakes() or po:NoLifts() or po:NoQuads() or po:NoRolls())
+  addCheck("no_remove", "No note-removal mods active", not removes)
+
+  local adds = (po:Wide() or po:Skippy() or po:Quick() or po:Echo() or po:BMRize() or po:Stomp() or po:Big())
+  addCheck("no_add", "No note-addition mods active", not adds)
+
+  -- Fail type must be Immediate or ImmediateContinue
+  local failType = GAMESTATE:GetPlayerFailType(player)
+  local ftValid = (failType == "FailType_Immediate" or failType == "FailType_ImmediateContinue")
+  addCheck("failtype", "Fail type must be Immediate/ImmediateContinue", ftValid)
+
+  -- Must be a human player unless override provided via opts.allowAutoplay
+  local allowAutoplay = opts.allowAutoplay == true
+  addCheck("human", allowAutoplay and "Autoplay allowed (testing override)" or "Player must be human (no autoplay)", IsHumanPlayer(player) or allowAutoplay)
+
+  -- MinTNSToScoreNotes cannot hide W1/W2 (must be Greats or worse)
+  local minTNSToScoreNores = ToEnumShortString(PREFSMAN:GetPreference("MinTNSToScoreNotes"))
+  local rehitsOk = (SL.Global.GameMode == "ITG") and (minTNSToScoreNores ~= "W1" and minTNSToScoreNores ~= "W2") or false
+  addCheck("rehit", "MinTNSToScoreNotes must be >= W3", rehitsOk)
+
+  -- Log summary (only if failing) – compact
+  if not results.ok then
+    local msgs = {}
+    for _, c in ipairs(results.checks) do if not c.pass then table.insert(msgs, c.id) end end
+    log("Eligibility failed for P"..(pn == "P1" and "1" or "2")..": "..table.concat(msgs, ","))
+  end
+
+  return results
+end
+
 -- Utility functions
-local function debugPrint(message)
-  Trace(MODULE_TAG .. " " .. message)
+debugPrint = function(message)
+  if Trace then Trace(MODULE_TAG .. " " .. message) end
 end
 
 local function printTable(t, indent)
@@ -29,28 +151,37 @@ local function printTable(t, indent)
   end
 end
 
--- Profile and API key management
+-- Profile and API key management (returns table { apiKey, allowAutoplay })
 local function readApiKey(player)
   local playerIndex = (player == PLAYER_1) and 0 or 1
   local profilePath = PROFILEMAN:GetProfileDir(playerIndex)
   local filePath = profilePath .. "ArrowCloud.ini"
   local apiKey
+  local allowAutoplay = false
 
   if not FILEMAN:DoesFileExist(filePath) then
-    -- Create file with empty API key for this profile
     IniFile.WriteFile(filePath, {
       ["ArrowCloud"] = {
         ["ApiKey"] = "",
+        ["AllowAutoplay"] = "0" -- set to 1 for testing autoplay submissions
       }
     })
   else
     local contents = IniFile.ReadFile(filePath)
-    if contents["ArrowCloud"] and contents["ArrowCloud"]["ApiKey"] then
-      apiKey = contents["ArrowCloud"]["ApiKey"]
+    if contents["ArrowCloud"] then
+      if contents["ArrowCloud"]["ApiKey"] then
+        apiKey = contents["ArrowCloud"]["ApiKey"]
+      end
+      if contents["ArrowCloud"]["AllowAutoplay"] ~= nil then
+        allowAutoplay = tostring(contents["ArrowCloud"]["AllowAutoplay"]) == "1"
+      else
+        contents["ArrowCloud"]["AllowAutoplay"] = "0"
+        IniFile.WriteFile(filePath, contents)
+      end
     end
   end
 
-  return apiKey
+  return { apiKey = apiKey, allowAutoplay = allowAutoplay }
 end
 
 -- JSON encoding utilities
@@ -458,7 +589,8 @@ local function buildSongResultData(player, style)
     style = style,
     modifiers = songInfo.modifiers,
     radar = resultInfo.radar,
-    _arrowCloudBodyVersion = "1.0"
+    musicRate = SL.Global.ActiveModifiers and SL.Global.ActiveModifiers.MusicRate or 1,
+    _arrowCloudBodyVersion = "1.1"
   }
 end
 
@@ -505,7 +637,7 @@ local function buildCourseResultData(player, style)
     radar = getRadarData(player),
   }
 
-  local lifebarInfo = getLifebarData(player, 1000, 200)
+  local lifebarInfo = getLifebarData(player)
 
   -- Combined result
   return {
@@ -522,7 +654,9 @@ local function buildCourseResultData(player, style)
     lifebarInfo = lifebarInfo,
     style = style,
     modifiers = courseInfo.modifiers,
-    radar = resultInfo.radar
+    radar = resultInfo.radar,
+    musicRate = SL.Global.ActiveModifiers and SL.Global.ActiveModifiers.MusicRate or 1,
+    _arrowCloudBodyVersion = "1.1"
   }
 end
 
@@ -537,14 +671,19 @@ moduleRegistration["ScreenEvaluationStage"] = Def.Actor {
     end
     
     for player in ivalues(GAMESTATE:GetHumanPlayers()) do
-      local partValid, allValid = ValidForGrooveStats(player)
-      local apiKey = readApiKey(player)
+      local profileCfg = readApiKey(player)
+      local eligibility = ArrowCloud.isEligible(player, { allowAutoplay = profileCfg.allowAutoplay })
+      local apiKey = profileCfg.apiKey
       
-      if apiKey ~= nil then
+      if apiKey ~= nil and apiKey ~= "" and eligibility.ok then
         local data = buildSongResultData(player, style)
         local pn = ToEnumShortString(player)
         local hash = tostring(SL[pn].Streams.Hash)
         sendScoreData(data, apiKey, hash)
+      else
+        if apiKey ~= nil and not eligibility.ok then
+          debugPrint("Skipping submission (ineligible)")
+        end
       end
     end
   end
@@ -564,23 +703,20 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       end
       
       for player in ivalues(GAMESTATE:GetHumanPlayers()) do
-        local partValid, allValid = ValidForGrooveStats(player)
+        local profileCfg = readApiKey(player)
+        -- Ignore the course restriction for nonstop; reuse other checks.
+        local eligibility = ArrowCloud.isEligible(player, { ignoreCourse = true, allowAutoplay = profileCfg.allowAutoplay })
 
-        -- Override course validation logic
-        allValid = true
-        for i, valid in ipairs(partValid) do
-          if i ~= 3 and not valid then
-            allValid = false
-            break
-          end
-        end
-
-        local apiKey = readApiKey(player)
-        if allValid and apiKey ~= nil then
+        local apiKey = profileCfg.apiKey
+        if eligibility.ok and apiKey ~= nil and apiKey ~= "" then
           local data = buildCourseResultData(player, style)
           local course = GAMESTATE:GetCurrentCourse()
           local hash = BinaryToHex(CRYPTMAN:SHA1File(course:GetCourseDir())):sub(1, 16)
           sendScoreData(data, apiKey, hash)
+        else
+          if apiKey ~= nil and not eligibility.ok then
+            debugPrint("Skipping course submission (ineligible)")
+          end
         end
       end
     end
