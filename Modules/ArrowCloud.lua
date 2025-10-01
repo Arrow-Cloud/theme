@@ -17,27 +17,35 @@ local debugPrint
 
 -- Guarded stub declarations (only for tooling; real objects provided by engine at runtime)
 if not GAMESTATE then GAMESTATE = {} end
-if not PREFSMAN then PREFSMAN = { GetPreference=function(...) return 0 end } end
-if not THEME then THEME = { GetMetric=function(...) return 0 end } end
-if not SL then SL = { Global = { GameMode = "ITG", ActiveModifiers = { MusicRate = 1 }, Stages = { PlayedThisGame = 0 } }, P1 = { ActiveModifiers={TimingWindows={true,true,true,true,true}}}, P2={ ActiveModifiers={TimingWindows={true,true,true,true,true}}} } end
+if not PREFSMAN then PREFSMAN = { GetPreference = function(...) return 0 end } end
+if not THEME then THEME = { GetMetric = function(...) return 0 end } end
+if not SL then SL = { Global = { GameMode = "ITG", ActiveModifiers = { MusicRate = 1 }, Stages = { PlayedThisGame = 0 } }, P1 = { ActiveModifiers = { TimingWindows = { true, true, true, true, true } } }, P2 = { ActiveModifiers = { TimingWindows = { true, true, true, true, true } } } } end
 if not PLAYER_1 then PLAYER_1 = 0 end
 if not PLAYER_2 then PLAYER_2 = 1 end
-if not STATSMAN then STATSMAN = { GetCurStageStats=function(...) return { GetPlayerStageStats=function(...) return { GetPercentDancePoints=function(...) return 0 end, GetGrade=function(...) return "Grade_Tier01" end, GetLifeRecord=function(...) return {} end, GetRadarActual=function(...) return { GetValue=function(...) return 0 end } end, GetRadarPossible=function(...) return { GetValue=function(...) return 0 end } end } end } end } end
-if not CRYPTMAN then CRYPTMAN = { SHA1File=function(...) return "" end } end
-if not PROFILEMAN then PROFILEMAN = { GetProfileDir=function(...) return "" end } end
-if not IniFile then IniFile = { WriteFile=function(...) end, ReadFile=function(...) return {} end } end
-if not NETWORK then NETWORK = { HttpRequest=function(...) return {} end } end
+if not STATSMAN then STATSMAN = { GetCurStageStats = function(...) return { GetPlayerStageStats = function(...) return { GetPercentDancePoints = function(...) return 0 end, GetGrade = function(...) return
+        "Grade_Tier01" end, GetLifeRecord = function(...) return {} end, GetRadarActual = function(...) return { GetValue = function(...) return 0 end } end, GetRadarPossible = function(...) return { GetValue = function(...) return 0 end } end } end } end } end
+if not CRYPTMAN then CRYPTMAN = { SHA1File = function(...) return "" end } end
+if not PROFILEMAN then PROFILEMAN = { GetProfileDir = function(...) return "" end } end
+if not IniFile then IniFile = { WriteFile = function(...) end, ReadFile = function(...) return {} end } end
+if not NETWORK then NETWORK = { HttpRequest = function(...) return {} end } end
 if not IsHumanPlayer then IsHumanPlayer = function(...) return true end end
 if not FormatPercentScore then FormatPercentScore = function(...) return "0%" end end
 if not CalculateExScore then CalculateExScore = function(...) return 0 end end
 if not GetTimingWindow then GetTimingWindow = function(...) return 0 end end
 if not GetWorstJudgment then GetWorstJudgment = function(...) return 0 end end
 if not BinaryToHex then BinaryToHex = function(...) return "" end end
-if not clamp then clamp = function(v,min,max) if v<min then return min elseif v>max then return max else return v end end end
+if not clamp then clamp = function(v, min, max) if v < min then return min elseif v > max then return max else return v end end end
 if not Trace then Trace = function(...) end end
-if not ToEnumShortString then ToEnumShortString = function(v, ...) if v==PLAYER_1 then return "P1" elseif v==PLAYER_2 then return "P2" else return tostring(v) end end end
-if not ivalues then ivalues = function(t, ...) local i=0 return function() i=i+1 if t[i]~=nil then return t[i] end end end end
-if not FILEMAN then FILEMAN = { DoesFileExist=function(...) return false end } end
+if not ToEnumShortString then ToEnumShortString = function(v, ...) if v == PLAYER_1 then return "P1" elseif v == PLAYER_2 then return
+      "P2" else return tostring(v) end end end
+if not ivalues then ivalues = function(t, ...)
+    local i = 0
+    return function()
+      i = i + 1
+      if t[i] ~= nil then return t[i] end
+    end
+  end end
+if not FILEMAN then FILEMAN = { DoesFileExist = function(...) return false end } end
 
 -- -------------------------------------------------------------------------------------------------
 -- Eligibility checks (refactored from ValidForGrooveStats in SL-Helpers-GrooveStats.lua)
@@ -63,7 +71,7 @@ function ArrowCloud.isEligible(player, opts)
   local results = { ok = true, checks = {}, failures = {} }
 
   local function addCheck(id, desc, pass)
-    table.insert(results.checks, { id=id, desc=desc, pass=pass })
+    table.insert(results.checks, { id = id, desc = desc, pass = pass })
     if not pass then
       results.ok = false
       table.insert(results.failures, id)
@@ -88,14 +96,15 @@ function ArrowCloud.isEligible(player, opts)
   addCheck("gamemode", "GameMode must be ITG", SL.Global.GameMode == "ITG")
 
   -- 5. LifeDifficultyScale <= 1 (standard or harder)
-  addCheck("lifediff", "LifeDifficultyScale must be standard or harder (<=1)", PREFSMAN:GetPreference("LifeDifficultyScale") <= 1)
+  addCheck("lifediff", "LifeDifficultyScale must be standard or harder (<=1)",
+    PREFSMAN:GetPreference("LifeDifficultyScale") <= 1)
 
   -- TimingWindowScale and granular timing window metric validation intentionally omitted:
   -- backend recomputes and validates precise timing data.
 
   -- 8. Rate between 0.10x and 10.00x (inclusive)
   -- This is super extreme ends of what will ever actually be done. The backend actually gates
-  -- this on a per leaderboard basis and today all leaderboards require exactly 1.0 rate, so 
+  -- this on a per leaderboard basis and today all leaderboards require exactly 1.0 rate, so
   -- this is simply a future looking idea.
   local rate = SL.Global.ActiveModifiers.MusicRate * 100
   addCheck("rate", "Music Rate must be 0.10x - 10.00x", rate >= 10 and rate <= 1000)
@@ -115,7 +124,8 @@ function ArrowCloud.isEligible(player, opts)
 
   -- Must be a human player unless override provided via opts.allowAutoplay
   local allowAutoplay = opts.allowAutoplay == true
-  addCheck("human", allowAutoplay and "Autoplay allowed (testing override)" or "Player must be human (no autoplay)", IsHumanPlayer(player) or allowAutoplay)
+  addCheck("human", allowAutoplay and "Autoplay allowed (testing override)" or "Player must be human (no autoplay)",
+    IsHumanPlayer(player) or allowAutoplay)
 
   -- MinTNSToScoreNotes cannot hide W1/W2 (must be Greats or worse)
   local minTNSToScoreNores = ToEnumShortString(PREFSMAN:GetPreference("MinTNSToScoreNotes"))
@@ -126,7 +136,7 @@ function ArrowCloud.isEligible(player, opts)
   if not results.ok then
     local msgs = {}
     for _, c in ipairs(results.checks) do if not c.pass then table.insert(msgs, c.id) end end
-    log("Eligibility failed for P"..(pn == "P1" and "1" or "2")..": "..table.concat(msgs, ","))
+    log("Eligibility failed for P" .. (pn == "P1" and "1" or "2") .. ": " .. table.concat(msgs, ","))
   end
 
   return results
@@ -200,7 +210,7 @@ end
 
 local function encodeJsonValue(value)
   local valueType = type(value)
-  
+
   if valueType == "string" then
     return '"' .. escapeJsonString(value) .. '"'
   elseif valueType == "number" or valueType == "boolean" then
@@ -208,7 +218,7 @@ local function encodeJsonValue(value)
   elseif valueType == "table" then
     local isArray = true
     local maxIndex = 0
-    
+
     for k, _ in pairs(value) do
       if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then
         isArray = false
@@ -218,7 +228,7 @@ local function encodeJsonValue(value)
         maxIndex = k
       end
     end
-    
+
     local result = {}
     if isArray then
       for i = 1, maxIndex do
@@ -287,6 +297,51 @@ local function getLifebarData(player)
   return lifebarData
 end
 
+local function getNPSData(player)
+  if GAMESTATE:IsCourseMode() then return {} end
+
+  local pn = ToEnumShortString(player)
+  local steps = GAMESTATE:GetCurrentSteps(player)
+  local song = GAMESTATE:GetCurrentSong()
+  if not steps or not song then return {} end
+
+  -- Ensure Streams data populated (wrapped to avoid hard crash if parser fails)
+  pcall(ParseChartInfo, steps, pn)
+
+  local peak = SL[pn] and SL[pn].Streams and SL[pn].Streams.PeakNPS or nil
+  local perMeasure = SL[pn] and SL[pn].Streams and SL[pn].Streams.NPSperMeasure or nil
+  if not (peak and perMeasure and #perMeasure > 1) then return {} end
+
+  local timingData = steps:GetTimingData()
+  local firstSecond = math.min(timingData:GetElapsedTimeFromBeat(0), 0)
+  local lastSecond = song:GetLastSecond()
+
+  local points = {}
+  local started = false
+  for i, nps in ipairs(perMeasure) do
+    if nps > 0 then started = true end
+    if started then
+      local t = timingData:GetElapsedTimeFromBeat((i - 1) * 4)
+      local normX = 0
+      if lastSecond > firstSecond then
+        normX = (t - firstSecond) / (lastSecond - firstSecond)
+      end
+      if normX < 0 then normX = 0 elseif normX > 1 then normX = 1 end
+      local normY = 0
+      if peak > 0 then normY = nps / peak end
+      if normY < 0 then normY = 0 elseif normY > 1 then normY = 1 end
+      table.insert(points, { x = normX, y = normY, nps = nps, measure = i - 1 })
+    end
+  end
+
+  return {
+    points = points,
+    peakNPS = peak,
+    firstSecond = firstSecond,
+    lastSecond = lastSecond
+  }
+end
+
 local function getTimingData(player)
   local pn = ToEnumShortString(player)
   local sequential_offsets = SL[pn].Stages.Stats[SL.Global.Stages.PlayedThisGame + 1].sequential_offsets
@@ -319,7 +374,7 @@ local function getPlayerModifiers(player)
     local cmod, cmodeSpeed = playerOptions:CMod()
     local mmod, mmodSpeed = playerOptions:MMod()
     local xmod, xmodSpeed = playerOptions:XMod()
-    
+
     if cmod then
       return "C", cmod
     elseif mmod then
@@ -411,7 +466,7 @@ local function getPlayerModifiers(player)
     if not disabledWindows or #disabledWindows == 0 then
       return "None"
     end
-    
+
     local windowNames = {}
     for _, window in ipairs(disabledWindows) do
       if window == "TimingWindow_W5" then
@@ -424,7 +479,7 @@ local function getPlayerModifiers(player)
         table.insert(windowNames, "Excellents")
       end
     end
-    
+
     if #windowNames == 0 then
       return "None"
     elseif #windowNames == 1 then
@@ -437,7 +492,7 @@ local function getPlayerModifiers(player)
   -- Acceleration modifiers detection
   local function getAccelerationModifiers()
     local accelMods = {}
-    
+
     if playerOptions:Boost() and playerOptions:Boost() > 0 then
       table.insert(accelMods, "Boost")
     end
@@ -453,14 +508,14 @@ local function getPlayerModifiers(player)
     if playerOptions:Boomerang() and playerOptions:Boomerang() > 0 then
       table.insert(accelMods, "Boomerang")
     end
-    
+
     return accelMods
   end
 
   -- Effect modifiers detection
   local function getEffectModifiers()
     local effectMods = {}
-    
+
     if playerOptions:Drunk() and playerOptions:Drunk() > 0 then
       table.insert(effectMods, "Drunk")
     end
@@ -491,14 +546,14 @@ local function getPlayerModifiers(player)
     if playerOptions:Beat() and playerOptions:Beat() > 0 then
       table.insert(effectMods, "Beat")
     end
-    
+
     return effectMods
   end
 
   -- Appearance modifiers detection
   local function getAppearanceModifiers()
     local appearanceMods = {}
-    
+
     if playerOptions:Hidden() and playerOptions:Hidden() > 0 then
       table.insert(appearanceMods, "Hidden")
     end
@@ -514,13 +569,13 @@ local function getPlayerModifiers(player)
     if playerOptions:RandomVanish() and playerOptions:RandomVanish() > 0 then
       table.insert(appearanceMods, "R.Vanish")
     end
-    
+
     return appearanceMods
   end
 
   -- Build complete modifiers structure
   local speedType, speedValue = getSpeedModifier()
-  
+
   return {
     speed = {
       type = speedType,
@@ -560,7 +615,8 @@ local function buildSongResultData(player, style)
 
   -- Performance results
   local resultInfo = {
-    score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub("%%", ""),
+    score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
+    "%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
     grade = STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetGrade(),
     radar = getRadarData(player),
@@ -589,6 +645,8 @@ local function buildSongResultData(player, style)
     style = style,
     modifiers = songInfo.modifiers,
     radar = resultInfo.radar,
+    npsInfo = getNPSData(player),
+    usedAutoplay = not IsHumanPlayer(player),
     musicRate = SL.Global.ActiveModifiers and SL.Global.ActiveModifiers.MusicRate or 1,
     _arrowCloudBodyVersion = "1.1"
   }
@@ -622,7 +680,7 @@ local function buildCourseResultData(player, style)
         ", artist: " .. escapeJsonString(trailSteps[i]:GetSong():GetTranslitArtist()) ..
         ", difficulty: " .. trailSteps[i]:GetSteps():GetMeter() .. "},"
   end
-  
+
   -- Clean up entries format
   if courseInfo.entries:sub(-1) == "," then
     courseInfo.entries = courseInfo.entries:sub(1, -2)
@@ -631,7 +689,8 @@ local function buildCourseResultData(player, style)
 
   -- Performance results
   local resultInfo = {
-    score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub("%%", ""),
+    score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
+    "%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
     grade = STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetGrade(),
     radar = getRadarData(player),
@@ -655,6 +714,8 @@ local function buildCourseResultData(player, style)
     style = style,
     modifiers = courseInfo.modifiers,
     radar = resultInfo.radar,
+    npsInfo = getNPSData(player),
+    usedAutoplay = not IsHumanPlayer(player),
     musicRate = SL.Global.ActiveModifiers and SL.Global.ActiveModifiers.MusicRate or 1,
     _arrowCloudBodyVersion = "1.1"
   }
@@ -666,15 +727,15 @@ local moduleRegistration = {}
 moduleRegistration["ScreenEvaluationStage"] = Def.Actor {
   ModuleCommand = function(self)
     local style = GAMESTATE:GetCurrentStyle():GetName()
-    if style == "versus" then 
-      style = "single" 
+    if style == "versus" then
+      style = "single"
     end
-    
+
     for player in ivalues(GAMESTATE:GetHumanPlayers()) do
       local profileCfg = readApiKey(player)
       local eligibility = ArrowCloud.isEligible(player, { allowAutoplay = profileCfg.allowAutoplay })
       local apiKey = profileCfg.apiKey
-      
+
       if apiKey ~= nil and apiKey ~= "" and eligibility.ok then
         local data = buildSongResultData(player, style)
         local pn = ToEnumShortString(player)
@@ -698,14 +759,15 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
     -- Only process fixed, non-autogen, non-endless courses
     if fixed and not autogen and not endless then
       local style = GAMESTATE:GetCurrentStyle():GetName()
-      if style == "versus" then 
-        style = "single" 
+      if style == "versus" then
+        style = "single"
       end
-      
+
       for player in ivalues(GAMESTATE:GetHumanPlayers()) do
         local profileCfg = readApiKey(player)
         -- Ignore the course restriction for nonstop; reuse other checks.
-        local eligibility = ArrowCloud.isEligible(player, { ignoreCourse = true, allowAutoplay = profileCfg.allowAutoplay })
+        local eligibility = ArrowCloud.isEligible(player,
+          { ignoreCourse = true, allowAutoplay = profileCfg.allowAutoplay })
 
         local apiKey = profileCfg.apiKey
         if eligibility.ok and apiKey ~= nil and apiKey ~= "" then
