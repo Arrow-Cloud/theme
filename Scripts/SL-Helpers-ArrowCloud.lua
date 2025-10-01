@@ -94,7 +94,7 @@ ArrowCloudRequest = function(chartHash)
 			if out.error then
 				SM("ArrowCloud: response error status=" .. tostring(out.statusCode) .. " err=" .. tostring(out.error))
 			else
-				SM("ArrowCloud: response ok status=" .. tostring(out.statusCode) .. " logged")
+				-- SM("ArrowCloud: response ok status=" .. tostring(out.statusCode) .. " logged")
 			end
 		end
 	}

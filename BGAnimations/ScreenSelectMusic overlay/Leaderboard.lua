@@ -382,7 +382,6 @@ local af = Def.ActorFrame{
 					end
 				end
 				-- Still attempt ArrowCloud logging (hash may exist) even if GrooveStats disabled.
-        SM("ArrowCloud: Requesting leaderboards for hash=" .. (SL.P1 and SL.P1.Streams.Hash or "") .. " and " .. (SL.P2 and SL.P2.Streams.Hash or ""))
 				local hash = ""
 				if SL.P1 and SL.P1.Streams and SL.P1.Streams.Hash ~= "" then
 					hash = SL.P1.Streams.Hash
@@ -423,7 +422,6 @@ local af = Def.ActorFrame{
 			end
 
 			-- ArrowCloud parallel logging request
-      SM("ArrowCloud: Requesting leaderboards for hash=" .. (SL.P1 and SL.P1.Streams.Hash or "") .. " and " .. (SL.P2 and SL.P2.Streams.Hash or ""))
 			local hash = ""
 			if SL.P1 and SL.P1.Streams and SL.P1.Streams.Hash ~= "" then
 				hash = SL.P1.Streams.Hash
