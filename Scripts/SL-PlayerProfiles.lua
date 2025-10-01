@@ -353,21 +353,21 @@ ParseArrowCloudIni = function(player)
 		IniFile.WriteFile(path, {
 			["ArrowCloud"]={
 				["ApiKey"]="",
+				["AllowAutoplay"]="0"
 			}
 		})
 	else
 		local contents = IniFile.ReadFile(path)
-		for k,v in pairs(contents["ArrowCloud"]) do
-			if k == "ApiKey" then
-				-- Accept non-empty string; length not enforced here (backend defines validity)
-				SL[pn].ArrowCloudApiKey = v or ""
-			end
-		end
-		IniFile.WriteFile(path, {
-			["ArrowCloud"]={
-				["ApiKey"]=SL[pn].ArrowCloudApiKey,
-			}
-		})
+		local section = contents["ArrowCloud"] or {}
+		-- ApiKey
+		SL[pn].ArrowCloudApiKey = section["ApiKey"] or ""
+		-- Preserve/parse AllowAutoplay (default 0). Expose on SL for potential UI/debug.
+		SL[pn].ArrowCloudAllowAutoplay = (section["AllowAutoplay"] == "1")
+		-- Ensure keys exist when writing back (preserve any other unknown keys)
+		section["ApiKey"] = SL[pn].ArrowCloudApiKey
+		if section["AllowAutoplay"] == nil then section["AllowAutoplay"] = "0" end
+		contents["ArrowCloud"] = section
+		IniFile.WriteFile(path, contents)
 	end
 end
 
@@ -382,9 +382,17 @@ WriteArrowCloudIni = function(player)
 	local pn = ToEnumShortString(player)
 	if not dir or #dir == 0 then return "" end
 	local path = dir .. "ArrowCloud.ini"
-	IniFile.WriteFile(path, {
-		["ArrowCloud"]={
-			["ApiKey"]=SL[pn].ArrowCloudApiKey,
-		}
-	})
+	local contents = {}
+	if FILEMAN:DoesFileExist(path) then
+		contents = IniFile.ReadFile(path) or {}
+	end
+	contents["ArrowCloud"] = contents["ArrowCloud"] or {}
+	contents["ArrowCloud"]["ApiKey"] = SL[pn].ArrowCloudApiKey
+	-- If theme code toggled the test flag in memory, persist it; otherwise preserve existing.
+	if SL[pn].ArrowCloudAllowAutoplay ~= nil then
+		contents["ArrowCloud"]["AllowAutoplay"] = SL[pn].ArrowCloudAllowAutoplay and "1" or "0"
+	elseif contents["ArrowCloud"]["AllowAutoplay"] == nil then
+		contents["ArrowCloud"]["AllowAutoplay"] = "0"
+	end
+	IniFile.WriteFile(path, contents)
 end
