@@ -184,6 +184,10 @@ LoadProfileCustom = function(profile, dir)
 
 		SL[pn]:initialize()
 		ParseGrooveStatsIni(player)
+		-- Load ArrowCloud API key (mirrors GrooveStats ini pattern)
+		if player then
+			ParseArrowCloudIni(player)
+		end
 		ReadItlFile(player)
 
 		SL[pn].Stages = stages
@@ -255,6 +259,7 @@ SaveProfileCustom = function(profile, dir)
 			IniFile.WriteFile( path, {[theme_name]=output} )
 
 			WriteGrooveStatsIni(player)
+			WriteArrowCloudIni(player)
 			-- Write to the ITL file if we need to.
 			-- This is relevant for memory cards.
 			WriteItlFile(player)
@@ -324,4 +329,62 @@ GetPlayerAvatarPath = function(player)
 	local name = PROFILEMAN:GetProfile(player):GetDisplayName()
 
 	return GetAvatarPath(dir, name)
+end
+
+-- -----------------------------------------------------------------------
+-- ArrowCloud ApiKey handling (mirrors GrooveStats ini logic, minimal validation)
+
+ParseArrowCloudIni = function(player)
+	if not player then return end
+
+	local profile_slot = {
+		[PLAYER_1] = "ProfileSlot_Player1",
+		[PLAYER_2] = "ProfileSlot_Player2"
+	}
+	if not profile_slot[player] then return "" end
+
+	local dir = PROFILEMAN:GetProfileDir(profile_slot[player])
+	local pn = ToEnumShortString(player)
+	if not dir or #dir == 0 then return "" end
+
+	local path = dir .. "ArrowCloud.ini"
+
+	if not FILEMAN:DoesFileExist(path) then
+		IniFile.WriteFile(path, {
+			["ArrowCloud"]={
+				["ApiKey"]="",
+			}
+		})
+	else
+		local contents = IniFile.ReadFile(path)
+		for k,v in pairs(contents["ArrowCloud"]) do
+			if k == "ApiKey" then
+				-- Accept non-empty string; length not enforced here (backend defines validity)
+				SL[pn].ArrowCloudApiKey = v or ""
+			end
+		end
+		IniFile.WriteFile(path, {
+			["ArrowCloud"]={
+				["ApiKey"]=SL[pn].ArrowCloudApiKey,
+			}
+		})
+	end
+end
+
+WriteArrowCloudIni = function(player)
+	if not player then return end
+	local profile_slot = {
+		[PLAYER_1] = "ProfileSlot_Player1",
+		[PLAYER_2] = "ProfileSlot_Player2"
+	}
+	if not profile_slot[player] then return "" end
+	local dir = PROFILEMAN:GetProfileDir(profile_slot[player])
+	local pn = ToEnumShortString(player)
+	if not dir or #dir == 0 then return "" end
+	local path = dir .. "ArrowCloud.ini"
+	IniFile.WriteFile(path, {
+		["ArrowCloud"]={
+			["ApiKey"]=SL[pn].ArrowCloudApiKey,
+		}
+	})
 end

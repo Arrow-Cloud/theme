@@ -289,7 +289,7 @@ local function getLifebarData(player)
 
   for i, lifebarValue in ipairs(lifeRecord) do
     local stepSecond = chartStartSecond + (i - 1) * (duration / #lifeRecord)
-    local xValue = ((stepSecond - firstSecond) / duration)
+    local xValue = stepSecond
     local yValue = lifebarValue
     table.insert(lifebarData, { x = xValue, y = yValue })
   end
