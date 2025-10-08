@@ -22,8 +22,26 @@ if not THEME then THEME = { GetMetric = function(...) return 0 end } end
 if not SL then SL = { Global = { GameMode = "ITG", ActiveModifiers = { MusicRate = 1 }, Stages = { PlayedThisGame = 0 } }, P1 = { ActiveModifiers = { TimingWindows = { true, true, true, true, true } } }, P2 = { ActiveModifiers = { TimingWindows = { true, true, true, true, true } } } } end
 if not PLAYER_1 then PLAYER_1 = 0 end
 if not PLAYER_2 then PLAYER_2 = 1 end
-if not STATSMAN then STATSMAN = { GetCurStageStats = function(...) return { GetPlayerStageStats = function(...) return { GetPercentDancePoints = function(...) return 0 end, GetGrade = function(...) return
-        "Grade_Tier01" end, GetLifeRecord = function(...) return {} end, GetRadarActual = function(...) return { GetValue = function(...) return 0 end } end, GetRadarPossible = function(...) return { GetValue = function(...) return 0 end } end } end } end } end
+if not STATSMAN then
+  STATSMAN = {
+    GetCurStageStats = function(...)
+      return {
+        GetPlayerStageStats = function(...)
+          return {
+            GetPercentDancePoints = function(...) return 0 end,
+            GetGrade = function(...)
+              return
+              "Grade_Tier01"
+            end,
+            GetLifeRecord = function(...) return {} end,
+            GetRadarActual = function(...) return { GetValue = function(...) return 0 end } end,
+            GetRadarPossible = function(...) return { GetValue = function(...) return 0 end } end
+          }
+        end
+      }
+    end
+  }
+end
 if not CRYPTMAN then CRYPTMAN = { SHA1File = function(...) return "" end } end
 if not PROFILEMAN then PROFILEMAN = { GetProfileDir = function(...) return "" end } end
 if not IniFile then IniFile = { WriteFile = function(...) end, ReadFile = function(...) return {} end } end
@@ -36,15 +54,27 @@ if not GetWorstJudgment then GetWorstJudgment = function(...) return 0 end end
 if not BinaryToHex then BinaryToHex = function(...) return "" end end
 if not clamp then clamp = function(v, min, max) if v < min then return min elseif v > max then return max else return v end end end
 if not Trace then Trace = function(...) end end
-if not ToEnumShortString then ToEnumShortString = function(v, ...) if v == PLAYER_1 then return "P1" elseif v == PLAYER_2 then return
-      "P2" else return tostring(v) end end end
-if not ivalues then ivalues = function(t, ...)
+if not ToEnumShortString then
+  ToEnumShortString = function(v, ...)
+    if v == PLAYER_1 then
+      return "P1"
+    elseif v == PLAYER_2 then
+      return
+      "P2"
+    else
+      return tostring(v)
+    end
+  end
+end
+if not ivalues then
+  ivalues = function(t, ...)
     local i = 0
     return function()
       i = i + 1
       if t[i] ~= nil then return t[i] end
     end
-  end end
+  end
+end
 if not FILEMAN then FILEMAN = { DoesFileExist = function(...) return false end } end
 
 -- -------------------------------------------------------------------------------------------------
@@ -616,10 +646,11 @@ local function buildSongResultData(player, style)
   -- Performance results
   local resultInfo = {
     score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
-    "%%", ""),
+      "%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
     grade = STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetGrade(),
     radar = getRadarData(player),
+    passed = not STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetFailed(),
   }
 
   -- Gameplay data
@@ -638,6 +669,7 @@ local function buildSongResultData(player, style)
     itgScore = resultInfo.score,
     exScore = resultInfo.exscore,
     grade = resultInfo.grade,
+    passed = resultInfo.passed,
     hash = songInfo.hash,
     timingData = timingData,
     lifebarInfo = lifebarInfo,
@@ -648,7 +680,7 @@ local function buildSongResultData(player, style)
     npsInfo = getNPSData(player),
     usedAutoplay = not IsHumanPlayer(player),
     musicRate = SL.Global.ActiveModifiers and SL.Global.ActiveModifiers.MusicRate or 1,
-    _arrowCloudBodyVersion = "1.1"
+    _arrowCloudBodyVersion = "1.2"
   }
 end
 
@@ -690,10 +722,11 @@ local function buildCourseResultData(player, style)
   -- Performance results
   local resultInfo = {
     score = FormatPercentScore(STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetPercentDancePoints()):gsub(
-    "%%", ""),
+      "%%", ""),
     exscore = ("%.2f"):format(CalculateExScore(player)),
     grade = STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetGrade(),
     radar = getRadarData(player),
+    passed = not STATSMAN:GetCurStageStats():GetPlayerStageStats(player):GetFailed(),
   }
 
   local lifebarInfo = getLifebarData(player)
@@ -710,6 +743,7 @@ local function buildCourseResultData(player, style)
     itgScore = resultInfo.score,
     exScore = resultInfo.exscore,
     grade = resultInfo.grade,
+    passed = resultInfo.passed,
     lifebarInfo = lifebarInfo,
     style = style,
     modifiers = courseInfo.modifiers,
