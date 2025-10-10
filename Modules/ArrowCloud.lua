@@ -751,7 +751,7 @@ local function buildCourseResultData(player, style)
     npsInfo = getNPSData(player),
     usedAutoplay = not IsHumanPlayer(player),
     musicRate = SL.Global.ActiveModifiers and SL.Global.ActiveModifiers.MusicRate or 1,
-    _arrowCloudBodyVersion = "1.1"
+    _arrowCloudBodyVersion = "1.2"
   }
 end
 
