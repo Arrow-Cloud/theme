@@ -350,6 +350,13 @@ local af = Def.ActorFrame{
 	RequestResponseActor(17, 50)..{
 		SendLeaderboardRequestCommand=function(self)
       SM("SendLeaderboardRequest")
+			-- Temporary restriction: only enable Arrow Cloud leaderboard behavior for packs containing "Blue Shift".
+			local function ShouldAllowArrowCloudForCurrentPack()
+				local song = GAMESTATE:GetCurrentSong()
+				if not song then return false end
+				local group = song:GetGroupName() or ""
+				return string.find(string.lower(group), "blue shift", 1, true) ~= nil
+			end
 			-- If a player does not have an API key or chart hash just show the local leaderboard.
 			for i=1,2 do
 				local pn = "P"..i
@@ -388,7 +395,7 @@ local af = Def.ActorFrame{
 				elseif SL.P2 and SL.P2.Streams and SL.P2.Streams.Hash ~= "" then
 					hash = SL.P2.Streams.Hash
 				end
-				if hash ~= "" and ArrowCloudRequest then
+				if hash ~= "" and ArrowCloudRequest and ShouldAllowArrowCloudForCurrentPack() then
 					ArrowCloudRequest(hash)
 				end
 				return
@@ -421,14 +428,14 @@ local af = Def.ActorFrame{
 				})
 			end
 
-			-- ArrowCloud parallel logging request
+			-- ArrowCloud parallel logging request (temporarily restricted to Blue Shift packs)
 			local hash = ""
 			if SL.P1 and SL.P1.Streams and SL.P1.Streams.Hash ~= "" then
 				hash = SL.P1.Streams.Hash
 			elseif SL.P2 and SL.P2.Streams and SL.P2.Streams.Hash ~= "" then
 				hash = SL.P2.Streams.Hash
 			end
-			if hash ~= "" and ArrowCloudRequest then
+			if hash ~= "" and ArrowCloudRequest and ShouldAllowArrowCloudForCurrentPack() then
 				ArrowCloudRequest(hash)
 			end
 		end

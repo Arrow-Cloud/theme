@@ -406,6 +406,14 @@ local LeaderboardRequestProcessor = function(res, master)
 end
 
 -- ArrowCloud integration --------------------------------------------------
+-- Temporary restriction: only enable Arrow Cloud leaderboard behavior for packs containing "Blue Shift".
+local function ShouldAllowArrowCloudForCurrentPack()
+	local song = GAMESTATE:GetCurrentSong()
+	if not song then return false end
+	local group = song:GetGroupName() or ""
+	return string.find(string.lower(group), "blue shift", 1, true) ~= nil
+end
+
 local ArrowCloudRequestProcessor = function(res)
 	-- Expect res.statusCode and res.body (raw JSON string)
 	if not res then return end
@@ -621,7 +629,7 @@ local af = Def.ActorFrame{
 				end
 
 				-- ArrowCloud direct request (independent of GS). We perform a separate HTTP call.
-				if willDoArrowCloud then
+						if willDoArrowCloud and ShouldAllowArrowCloudForCurrentPack() then
 					local ach = SL[pn].Streams.Hash
 					local acHeaders = {}
 					acHeaders["Authorization"] = "Bearer " .. SL[pn].ArrowCloudApiKey
@@ -1051,7 +1059,11 @@ for i=1,NumEntries do
 			local clr = Color.White
 			if score.isFail then
 				clr = Color.Red
+			elseif cur_style == 6 then
+				-- SuperEX pane: render scores in pink
+				clr = SL.JudgmentColors["FA+"][7]
 			elseif score.isEx then
+				-- EX scoring (non-SuperEX) in red
 				clr = SL.JudgmentColors["FA+"][1]
 			elseif score.isSelf then
 				clr = self_color

@@ -7,10 +7,10 @@ Inspired and adapted from Kuro's discord leaderboard scraper: https://github.com
 local ArrowCloud = {}
 
 -- Constants
-local BASE_URL = "https://b4mdyahpki.execute-api.us-east-2.amazonaws.com/prod"
+local BASE_URL = "https://api.arrowcloud.dance"
 local MODULE_TAG = "[ArrowCloud-SLmodule]"
 
--- luacheck: globals GAMESTATE PREFSMAN THEME SL PLAYER_1 PLAYER_2 STATSMAN CRYPTMAN PROFILEMAN IniFile NETWORK IsHumanPlayer FormatPercentScore CalculateExScore GetTimingWindow GetWorstJudgment BinaryToHex clamp Trace ToEnumShortString ivalues
+-- luacheck: globals GAMESTATE PREFSMAN THEME SL PLAYER_1 PLAYER_2 STATSMAN CRYPTMAN PROFILEMAN IniFile NETWORK IsHumanPlayer FormatPercentScore CalculateExScore GetTimingWindow GetWorstJudgment BinaryToHex clamp Trace ToEnumShortString ivalues MESSAGEMAN
 
 -- forward declaration so isEligible can reference it
 local debugPrint
@@ -76,6 +76,11 @@ if not ivalues then
   end
 end
 if not FILEMAN then FILEMAN = { DoesFileExist = function(...) return false end } end
+if not MESSAGEMAN then MESSAGEMAN = { Broadcast = function(...) end } end
+-- Screen dimensions (tooling stub only)
+if not _screen then _screen = { w = 640, h = 480, cx = 320, cy = 240 } end
+-- LoadFont (tooling stub only)
+if not LoadFont then LoadFont = function(...) return Def.Actor end end
 
 -- -------------------------------------------------------------------------------------------------
 -- Eligibility checks (refactored from ValidForGrooveStats in SL-Helpers-GrooveStats.lua)
@@ -281,7 +286,7 @@ local function encodeJson(value)
 end
 
 -- HTTP communication
-local function sendScoreData(data, apiKey, hash)
+local function sendScoreData(data, apiKey, hash, player)
   local url = BASE_URL .. "/v1/chart/" .. hash .. "/play"
   debugPrint("HTTP POST URL: " .. url)
 
@@ -296,10 +301,26 @@ local function sendScoreData(data, apiKey, hash)
       ["Authorization"] = "Bearer " .. apiKey
     },
     onResponse = function(response)
+      local ok = false
+      local status = nil
+      local err = nil
+      local body = ""
       if type(response) == "table" then
-        response = table.concat(response)
+        status = response.statusCode
+        err = response.error and ToEnumShortString(response.error) or nil
+        body = response.body or ""
+        if type(body) ~= "string" then body = tostring(body) end
+        if #body > 256 then body = body:sub(1, 256) .. "…" end
+        ok = (status ~= nil and status >= 200 and status < 300)
+      else
+        -- Legacy path; treat as failure but log what we saw.
+        body = tostring(response)
       end
-      debugPrint("HTTP Response: " .. response)
+      debugPrint("Submit response: status=" .. tostring(status) .. (err and (" error=" .. err) or "") .. " body=" .. body)
+
+      -- Notify UI listeners on evaluation screens.
+      local pn = player and ToEnumShortString(player) or nil
+      MESSAGEMAN:Broadcast("ArrowCloudSubmitResult", { ok = ok, player = pn, status = status, error = err })
     end
   }
 end
@@ -758,33 +779,77 @@ end
 -- Module registration and event handlers
 local moduleRegistration = {}
 
-moduleRegistration["ScreenEvaluationStage"] = Def.Actor {
+moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
+  InitCommand = function(self)
+    self.waiting = { P1 = false, P2 = false }
+  end,
   ModuleCommand = function(self)
+    -- Clear previous texts
+    local p1Text = self:GetChild("ACSubmitP1")
+    local p2Text = self:GetChild("ACSubmitP2")
+    if p1Text then p1Text:settext("") end
+    if p2Text then p2Text:settext("") end
+    self.waiting = { P1 = false, P2 = false }
+
     local style = GAMESTATE:GetCurrentStyle():GetName()
     if style == "versus" then
       style = "single"
     end
 
-    for player in ivalues(GAMESTATE:GetHumanPlayers()) do
+    local players = GAMESTATE:GetHumanPlayers()
+    for _, player in ipairs(players) do
+      local pn = ToEnumShortString(player)
+      local label = (pn == "P1") and p1Text or p2Text
       local profileCfg = readApiKey(player)
       local eligibility = ArrowCloud.isEligible(player, { allowAutoplay = profileCfg.allowAutoplay })
       local apiKey = profileCfg.apiKey
 
       if apiKey ~= nil and apiKey ~= "" and eligibility.ok then
+        if label then label:settext("Arrow Cloud: submitting…") end
+        self.waiting[pn] = true
         local data = buildSongResultData(player, style)
-        local pn = ToEnumShortString(player)
         local hash = tostring(SL[pn].Streams.Hash)
-        sendScoreData(data, apiKey, hash)
+        sendScoreData(data, apiKey, hash, player)
       else
+        if label then label:settext("❌ Arrow Cloud") end
         if apiKey ~= nil and not eligibility.ok then
           debugPrint("Skipping submission (ineligible)")
         end
       end
     end
-  end
+  end,
+
+  ArrowCloudSubmitResultMessageCommand = function(self, params)
+    if not params or not params.player then return end
+    local pn = params.player
+    local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
+    if not label then return end
+    if self.waiting[pn] then
+      label:settext(params.ok and "✔ Arrow Cloud" or "❌ Arrow Cloud")
+      self.waiting[pn] = false
+    end
+  end,
+
+  LoadFont("Common Normal") .. {
+    Name = "ACSubmitP1",
+    InitCommand = function(self)
+      self:xy(10, _screen.h - 32):zoom(0.6):halign(0)
+      self:settext("")
+    end
+  },
+  LoadFont("Common Normal") .. {
+    Name = "ACSubmitP2",
+    InitCommand = function(self)
+      self:xy(_screen.w - 10, _screen.h - 32):zoom(0.6):halign(1)
+      self:settext("")
+    end
+  }
 }
 
 moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
+  InitCommand = function(self)
+    self.waiting = { P1 = false, P2 = false }
+  end,
   ModuleCommand = function(self)
     local fixed = GAMESTATE:GetCurrentCourse():AllSongsAreFixed()
     local autogen = GAMESTATE:GetCurrentCourse():IsAutogen()
@@ -792,12 +857,19 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
 
     -- Only process fixed, non-autogen, non-endless courses
     if fixed and not autogen and not endless then
+      local p1Text = self:GetChild("ACSubmitP1")
+      local p2Text = self:GetChild("ACSubmitP2")
+      if p1Text then p1Text:settext("") end
+      if p2Text then p2Text:settext("") end
+      self.waiting = { P1 = false, P2 = false }
+
       local style = GAMESTATE:GetCurrentStyle():GetName()
       if style == "versus" then
         style = "single"
       end
 
-      for player in ivalues(GAMESTATE:GetHumanPlayers()) do
+      local players = GAMESTATE:GetHumanPlayers()
+      for _, player in ipairs(players) do
         local profileCfg = readApiKey(player)
         -- Ignore the course restriction for nonstop; reuse other checks.
         local eligibility = ArrowCloud.isEligible(player,
@@ -805,18 +877,113 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
 
         local apiKey = profileCfg.apiKey
         if eligibility.ok and apiKey ~= nil and apiKey ~= "" then
+          local pn = ToEnumShortString(player)
+          local label = (pn == "P1") and p1Text or p2Text
+          if label then label:settext("Arrow Cloud: submitting…") end
+          self.waiting[pn] = true
           local data = buildCourseResultData(player, style)
           local course = GAMESTATE:GetCurrentCourse()
           local hash = BinaryToHex(CRYPTMAN:SHA1File(course:GetCourseDir())):sub(1, 16)
-          sendScoreData(data, apiKey, hash)
+          sendScoreData(data, apiKey, hash, player)
         else
+          local pn = ToEnumShortString(player)
+          local label = (pn == "P1") and p1Text or p2Text
+          if label then label:settext("❌ Arrow Cloud") end
           if apiKey ~= nil and not eligibility.ok then
             debugPrint("Skipping course submission (ineligible)")
           end
         end
       end
     end
-  end
+  end,
+
+  ArrowCloudSubmitResultMessageCommand = function(self, params)
+    if not params or not params.player then return end
+    local pn = params.player
+    local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
+    if not label then return end
+    if self.waiting[pn] then
+      label:settext(params.ok and "✔ Arrow Cloud" or "❌ Arrow Cloud")
+      self.waiting[pn] = false
+    end
+  end,
+
+  LoadFont("Common Normal") .. {
+    Name = "ACSubmitP1",
+    InitCommand = function(self)
+      self:xy(10, _screen.h - 32):zoom(0.6):halign(0)
+      self:settext("")
+    end
+  },
+  LoadFont("Common Normal") .. {
+    Name = "ACSubmitP2",
+    InitCommand = function(self)
+      self:xy(_screen.w - 10, _screen.h - 32):zoom(0.6):halign(1)
+      self:settext("")
+    end
+  }
+}
+
+-- ---------------------------------------------------------------------------------------------
+-- Title screen connection status for Arrow Cloud
+-- Simple check: hit /auth-check with the first available ArrowCloud API key. No partial states.
+-- Renders a compact label in the top-right: "✔ Arrow Cloud" or "❌ Arrow Cloud".
+
+moduleRegistration["ScreenTitleMenu"] = Def.ActorFrame {
+  InitCommand = function(self)
+    -- position near top-right
+    self:xy(_screen.w - 10, 15):zoom(0.8):halign(1)
+  end,
+  ModuleCommand = function(self)
+    self:queuecommand("CheckConnection")
+  end,
+
+  -- Perform the auth check.
+  CheckConnectionCommand = function(self)
+    local bmt = self:GetChild("Status")
+    if not bmt then return end
+
+    -- start with a neutral label while checking
+    bmt:settext("Arrow Cloud: checking…")
+
+    -- Hit the hello-world endpoint (root) without auth headers.
+    local url = BASE_URL .. "/"
+    NETWORK:HttpRequest{
+      url = url,
+      method = "GET",
+      connectTimeout = 6,
+      transferTimeout = 6,
+      onResponse = function(response)
+        -- Treat HTTP 200 as success; anything else (including errors) as failure.
+        local ok = false
+        if type(response) == "table" and response.statusCode == 200 then
+          ok = true
+        end
+        -- Log details safely (truncate body, avoid secrets)
+        local status = response and response.statusCode or "(nil)"
+        local err = response and response.error and ToEnumShortString(response.error) or nil
+        local body = response and response.body or ""
+        if type(body) ~= "string" then body = tostring(body) end
+        if #body > 256 then body = body:sub(1, 256) .. "…" end
+        debugPrint("Hello-check: status=" .. tostring(status) .. (err and (" error=" .. err) or "") .. " body=" .. body)
+
+        if ok then
+          bmt:settext("✔ Arrow Cloud")
+        else
+          bmt:settext("❌ Arrow Cloud")
+        end
+      end
+    }
+  end,
+
+  -- The text node we update
+  LoadFont("Common Normal") .. {
+    Name = "Status",
+    InitCommand = function(self)
+      self:halign(1)
+      self:settext("Arrow Cloud")
+    end
+  }
 }
 
 return moduleRegistration
