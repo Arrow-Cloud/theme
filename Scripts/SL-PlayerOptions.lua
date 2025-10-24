@@ -442,7 +442,7 @@ local Overrides = {
 				return { "ShowFaPlusWindow" }
 			end
 
-			return { "ShowFaPlusWindow", "ShowExScore", "ShowSuperEXScore", "ShowFaPlusPane", "SmallerWhite" }
+			return { "ShowFaPlusWindow", "ShowExScore", "ShowHardEXScore", "ShowFaPlusPane", "SmallerWhite" }
 		end,
 		LoadSelections = function(self, list, pn)
 			local mods = SL[ToEnumShortString(pn)].ActiveModifiers
@@ -453,7 +453,7 @@ local Overrides = {
 
 			list[1] = mods.ShowFaPlusWindow or false
 			list[2] = mods.ShowExScore or false
-			list[3] = mods.ShowSuperEXScore or false
+			list[3] = mods.ShowHardEXScore or false
 			list[4] = mods.ShowFaPlusPane or false
 			list[5] = mods.SmallerWhite or false
 			return list
@@ -474,7 +474,7 @@ local Overrides = {
 
 			mods.ShowFaPlusWindow = list[1]
 			mods.ShowExScore = list[2]
-			mods.ShowSuperEXScore = list[3]
+			mods.ShowHardEXScore = list[3]
 			mods.ShowFaPlusPane = list[4]
 			mods.SmallerWhite = list[5]
 			-- Default to FA+ pane if either options are active.

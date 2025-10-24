@@ -81,6 +81,39 @@ if not MESSAGEMAN then MESSAGEMAN = { Broadcast = function(...) end } end
 if not _screen then _screen = { w = 640, h = 480, cx = 320, cy = 240 } end
 -- LoadFont (tooling stub only)
 if not LoadFont then LoadFont = function(...) return Def.Actor end end
+if not LoadActor then LoadActor = function(...) return Def.Actor end end
+if not PlayerNumber then PlayerNumber = { PLAYER_1, PLAYER_2 } end
+if not SCREENMAN then
+  SCREENMAN = {
+    GetTopScreen = function()
+      return {
+        AddInputCallback = function(...) end,
+        RemoveInputCallback = function(...) end
+      }
+    end,
+    set_input_redirected = function(...) end
+  }
+end
+
+-- Centralized sizing helpers for the Arrow Cloud dialog overlay
+local function ACDialogSize()
+  -- base margins from screen and max intended size (tweak here to affect all uses)
+  local maxW, maxH = 300, 300
+  local marginW, marginH = 80, 120
+  local w = math.min(_screen.w - marginW, maxW)
+  local h = math.min(_screen.h - marginH, maxH)
+  return w, h
+end
+
+local function ACDialogWrapWidth()
+  -- compute a safe wrap width based on dialog width and internal padding
+  local w = ACDialogSize()
+  local paddingLeft, paddingRight = 10, 10
+  local wrap = w - (paddingLeft + paddingRight)
+  -- clamp to reasonable bounds
+  if wrap < 160 then wrap = 160 end
+  return wrap
+end
 
 -- -------------------------------------------------------------------------------------------------
 -- Eligibility checks (refactored from ValidForGrooveStats in SL-Helpers-GrooveStats.lua)
@@ -776,14 +809,406 @@ local function buildCourseResultData(player, style)
   }
 end
 
+-- ---------------------------------------------------------------------------------------------
+-- Simple dialog overlay used to present backend-controlled messages.
+-- For now, it renders placeholder content and is dismissible via Back/Start/Select.
+-- This mirrors the input redirection and dismissal behavior used by other prompts.
+
+local function createACDialogActor(name)
+  local af
+
+  -- simple placeholder datasets for three rotating leaderboard models
+  local boardData = {
+    H_EX = {
+      { rank = "2.", name = "Wafles",      score = "98.11", delta = "+1,234", isSelf = true, isRival = false},
+      { rank = "2.", name = "RootReducer", score = "98.01", delta = "-456", isSelf = false, isRival = true },
+      { rank = "4.", name = "Cathadan",    score = "95.68", delta = "-345", isSelf = false, isRival = false },
+      { rank = "5.", name = "bkirz",       score = "94.77", delta = "-234", isSelf = false, isRival = false },
+    },
+    EX = {
+      { rank = "2.", name = "RootReducer", score = "99.21",  delta = "--", isSelf = false, isRival = true },
+      { rank = "3.", name = "Wafles",      score = "99.11",  delta = "+1,234", isSelf = true, isRival = false },
+      { rank = "4.", name = "Cathadan",    score = "98.43",  delta = "-456", isSelf = false, isRival = false },
+      { rank = "5.", name = "bkirz",       score = "97.99",  delta = "-345", isSelf = false, isRival = false },
+    },
+    ITG = {
+      { rank = "2.", name = "RootReducer", score = "100.00", delta = "--", isSelf = false, isRival = true },
+      { rank = "3.", name = "Wafles",      score = "99.98", delta = "+1,234", isSelf = true, isRival = false },
+      { rank = "4.", name = "Cathadan",    score = "99.55", delta = "-456", isSelf = false, isRival = false },
+      { rank = "5.", name = "bkirz",       score = "99.22", delta = "-345", isSelf = false, isRival = false },
+    }
+  }
+
+  -- row highlight colors (aligned with scorebox styling)
+  local function maybeColor(hex, fallback)
+    local c = _G and rawget(_G, "color")
+    if type(c) == "function" then return c(hex) end
+    return fallback
+  end
+  local self_color  = maybeColor("#a1ff94", {0.631, 1.0, 0.580, 1})
+  local rival_color = maybeColor("#c29cff", {0.761, 0.612, 1.0, 1})
+
+  local function InputHandler(event)
+    if not af or not af:GetVisible() then return false end
+    if not event or not event.PlayerNumber or not event.button then return false end
+    if event.type == "InputEventType_FirstPress" then
+      if event.GameButton == "Back" or event.GameButton == "Start" or event.GameButton == "Select" then
+        af:queuecommand("Hide")
+        return true
+      end
+    end
+    return false
+  end
+
+  -- no-op for now; dialog content is static
+  local function applyContent() end
+
+  return Def.ActorFrame {
+    Name = name or "ACDialog",
+    InitCommand = function(self)
+      af = self
+      self:visible(false):draworder(200)
+    end,
+
+    -- external API: Show the dialog (optionally override placeholder content)
+    ShowDialogCommand = function(self, params)
+      -- parameters currently unused; dialog content is static
+
+      -- defer content application to ensure children exist
+      self:queuecommand("ApplyDialogContent")
+
+      local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
+      if topscreen then
+        -- prevent underlying screen input
+        for player in ivalues(PlayerNumber) do
+          SCREENMAN:set_input_redirected(player, true)
+        end
+        topscreen:AddInputCallback(InputHandler)
+      end
+
+      self:visible(true)
+      self:stoptweening():diffusealpha(0):linear(0.15):diffusealpha(1)
+      self:GetChild("Snd"):play()
+      local box = self:GetChild("Box")
+      if box then
+        local ml = box:GetChild("ModeLabel")
+        if ml then ml:playcommand("Start") end
+      end
+    end,
+
+    ApplyDialogContentCommand = function(self)
+      applyContent()
+    end,
+
+    HideCommand = function(self)
+      local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
+      if topscreen then
+        topscreen:RemoveInputCallback(InputHandler)
+        for player in ivalues(PlayerNumber) do
+          SCREENMAN:set_input_redirected(player, false)
+        end
+      end
+      self:stoptweening():linear(0.15):diffusealpha(0)
+      self:sleep(0.16):queuecommand("AfterHide")
+    end,
+
+    AfterHideCommand = function(self)
+      self:visible(false)
+    end,
+
+    -- sfx (re-use prompt sound)
+    LoadActor(THEME:GetPathS("", "_prompt")) .. {
+      Name = "Snd",
+      IsAction = true,
+      InitCommand = function(self) end,
+    },
+
+    -- darkened fullscreen underlay (slightly less opaque)
+    Def.Quad {
+      InitCommand = function(self) self:FullScreen():diffuse(0, 0, 0, 0.75) end
+    },
+
+    -- content box
+    Def.ActorFrame {
+      Name = "Box",
+      InitCommand = function(self) self:xy(_screen.cx, _screen.cy) end,
+
+      -- panel background (slightly less opaque black)
+      Def.Quad {
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          self:zoomto(w, h)
+          self:diffuse(0, 0, 0, 0.9)
+        end
+      },
+
+      -- border around panel (static quads like ITL/SRPG)
+      Def.Quad {
+        Name = "BorderTop",
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          local bw = 2
+          self:xy(0, -(h / 2))
+          self:halign(0.5):valign(0)
+          self:zoomto(w, bw)
+          self:diffuse(1, 1, 1, 0.35)
+        end
+      },
+      Def.Quad {
+        Name = "BorderBottom",
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          local bw = 2
+          self:xy(0, (h / 2))
+          self:halign(0.5):valign(1)
+          self:zoomto(w, bw)
+          self:diffuse(1, 1, 1, 0.35)
+        end
+      },
+      Def.Quad {
+        Name = "BorderLeft",
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          local bw = 2
+          self:xy(-(w / 2), 0)
+          self:halign(0):valign(0.5)
+          self:zoomto(bw, h - 2 * bw)
+          self:diffuse(1, 1, 1, 0.35)
+        end
+      },
+      Def.Quad {
+        Name = "BorderRight",
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          local bw = 2
+          self:xy((w / 2), 0)
+          self:halign(1):valign(0.5)
+          self:zoomto(bw, h - 2 * bw)
+          self:diffuse(1, 1, 1, 0.35)
+        end
+      },
+
+      -- header text (BLUE SHIFT) centered along the top
+      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+        Name = "LogoText",
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          self:xy(0, -(h / 2) + 14)
+          self:halign(0.5)
+          self:zoom(1.2)
+          -- rgb(1,89,227)
+          self:diffuse(1/255, 89/255, 227/255, 1)
+          self:settext("BLUE SHIFT")
+        end
+      },
+
+      -- centered freeform text under the header logo
+      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+        Name = "Freeform",
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          self:xy(0, -(h / 2) + 64)
+          self:halign(0.5)
+          self:zoom(1)
+          self:diffuse(1, 1, 1, 1)
+          self:settext("New Personal Best")
+        end
+      },
+
+  -- rotating leaderboard mode label (ITG / EX / H.EX)
+      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+        Name = "ModeLabel",
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          self:xy(0, -(h / 2) + 96)
+          self:halign(0.5)
+          self:zoom(0.7)
+          self:diffusealpha(0)
+        end,
+        StartCommand = function(self)
+          local box = self:GetParent()
+          box.modeIndex = 1
+          self:stoptweening():queuecommand("Apply"):queuecommand("Next")
+        end,
+        ApplyCommand = function(self)
+          local box = self:GetParent()
+          local idx = box.modeIndex or 1
+          local label, clr
+          if idx == 1 then
+            label = "ITG"; clr = SL and SL.JudgmentColors and SL.JudgmentColors["FA+"] and SL.JudgmentColors["FA+"][2] or Color.White
+          elseif idx == 2 then
+            label = "EX";  clr = SL and SL.JudgmentColors and SL.JudgmentColors["FA+"] and SL.JudgmentColors["FA+"][1] or Color.White
+          else
+            label = "H.EX"; clr = SL and SL.JudgmentColors and SL.JudgmentColors["FA+"] and SL.JudgmentColors["FA+"][7] or Color.White
+          end
+          self:settext(label)
+          self:diffuse(clr)
+          self:linear(0.15):diffusealpha(0.8)
+          local board = box:GetChild("Board")
+          if board then
+            local key = (idx == 1 and "ITG") or (idx == 2 and "EX") or "H_EX"
+            board:playcommand("SetMode", { key = key })
+          end
+        end,
+        NextCommand = function(self)
+          local box = self:GetParent()
+          box.modeIndex = ((box.modeIndex or 1) % 3) + 1
+          self:sleep(3.0):queuecommand("Apply")
+          self:sleep(0.0):queuecommand("Next")
+        end
+      },
+
+      -- Hardcoded leaderboard table (rank, alias, score, point delta)
+      Def.ActorFrame {
+        Name = "Board",
+        InitCommand = function(self)
+          local w, h = ACDialogSize()
+          self:xy(-(w / 2) + 20, -(h / 2) + 120)
+          -- compute and stash column anchors for children to use
+          self.innerW     = w - 40
+          self.rankRight  = 24               -- right-aligned rank near left
+          self.nameLeft   = 30               -- name starts a bit after rank
+          self.scoreRight = self.innerW - 64 -- score aligns near the right
+          self.deltaRight = self.innerW      -- delta flush-right, fills width
+        end,
+        SetModeCommand = function(self, params)
+          local key = params and params.key or "ITG"
+          local rows = boardData[key] or boardData.ITG
+          local function applyRow(rowName, data)
+            local row = self:GetChild(rowName)
+            if not row then return end
+            local rankNode  = row:GetChild("Rank")
+            local aliasNode = row:GetChild("Alias")
+            local scoreNode = row:GetChild("Score")
+            local deltaNode = row:GetChild("Delta")
+
+            -- set texts
+            rankNode:settext(data.rank or "")
+            aliasNode:settext(data.name or "")
+            scoreNode:settext(data.score or "")
+
+            -- row highlight for self/rival
+            local clr = nil
+            if data.isSelf then
+              clr = self_color
+            elseif data.isRival then
+              clr = rival_color
+            end
+            if clr then
+              rankNode:diffuse(clr)
+              aliasNode:diffuse(clr)
+              scoreNode:diffuse(clr)
+            else
+              rankNode:diffuse(1,1,1,1)
+              aliasNode:diffuse(1,1,1,1)
+              scoreNode:diffuse(1,1,1,1)
+            end
+
+            local d = tostring(data.delta or "")
+            if d:sub(1,1) == "+" then
+              deltaNode:diffuse(0.4,1,0.4,1)
+            elseif d:sub(1,1) == "-" then
+              deltaNode:diffuse(1,0.4,0.4,1)
+            else
+              deltaNode:diffuse(1,1,1,1)
+            end
+            deltaNode:settext(d)
+          end
+          applyRow("Row2", rows[1] or {})
+          applyRow("Row3", rows[2] or {})
+          applyRow("Row4", rows[3] or {})
+          applyRow("Row5", rows[4] or {})
+        end,
+
+        -- Row helper: four columns (rank, name, score, delta)
+        Def.ActorFrame { Name = "Row2",
+          InitCommand = function(self) self:y(0) end,
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+            local w = ACDialogSize()
+            local innerW = w - 40
+            self:xy(24, 0):halign(1):zoom(0.7):settext("2.")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+            self:xy(30, 0):halign(0):zoom(0.7):diffuse(1, 1, 1, 1):settext("RootReducer")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+            local w = ACDialogSize()
+            local innerW = w - 40
+            self:xy(innerW - 64, 0):halign(1):zoom(0.7):settext("99.21")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+            local w = ACDialogSize()
+            local innerW = w - 40
+            self:xy(innerW, 0):halign(1):zoom(0.7):diffuse(1, 1, 1, 1):settext("--")
+          end },
+        },
+        Def.ActorFrame { Name = "Row3",
+          InitCommand = function(self) self:y(24) end,
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+            self:xy(24, 0):halign(1):zoom(0.7):settext("3.")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+            self:xy(30, 0):halign(0):zoom(0.7):diffuse(1, 1, 1, 1):settext("Wafles")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - 40
+            self:xy(innerW - 64, 0):halign(1):zoom(0.7):settext("99.11")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - 40
+            self:xy(innerW, 0):halign(1):zoom(0.7):diffuse(0.4, 1, 0.4, 1):settext("+1,234")
+          end },
+        },
+        Def.ActorFrame { Name = "Row4",
+        InitCommand = function(self) self:y(48) end,
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+            self:xy(24, 0):halign(1):zoom(0.7):settext("4.")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+            self:xy(30, 0):halign(0):zoom(0.7):diffuse(1, 1, 1, 1):settext("Cathadan")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - 40
+            self:xy(innerW - 64, 0):halign(1):zoom(0.7):settext("98.43")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - 40
+            self:xy(innerW, 0):halign(1):zoom(0.7):diffuse(1, 0.4, 0.4, 1):settext("-456")
+          end },
+        },
+        Def.ActorFrame { Name = "Row5",
+          InitCommand = function(self) self:y(72) end,
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+            self:xy(24, 0):halign(1):zoom(0.7):settext("5.")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+            self:xy(30, 0):halign(0):zoom(0.7):diffuse(1, 1, 1, 1):settext("bkirz")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - 40
+            self:xy(innerW - 64, 0):halign(1):zoom(0.7):settext("97.99")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - 40
+            self:xy(innerW, 0):halign(1):zoom(0.7):diffuse(1, 0.4, 0.4, 1):settext("-345")
+          end },
+        },
+      }
+    }
+  }
+end
+
 -- Module registration and event handlers
 local moduleRegistration = {}
 
 moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   InitCommand = function(self)
     self.waiting = { P1 = false, P2 = false }
+    self.dialogShown = false
   end,
   ModuleCommand = function(self)
+    -- reset dialog visibility guard on each screen entry
+    self.dialogShown = false
     -- Clear previous texts
     local p1Text = self:GetChild("ACSubmitP1")
     local p2Text = self:GetChild("ACSubmitP2")
@@ -828,29 +1253,43 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       label:settext(params.ok and "✔ Arrow Cloud" or "❌ Arrow Cloud")
       self.waiting[pn] = false
     end
+    -- Show a placeholder dialog once when any response is received (regardless of waiting state)
+    if not self.dialogShown then
+      self.dialogShown = true
+      local dialog = self:GetChild("ACDialog")
+      if dialog then
+        dialog:playcommand("ShowDialog", {})
+      end
+    end
   end,
 
   LoadFont("Common Normal") .. {
     Name = "ACSubmitP1",
     InitCommand = function(self)
-      self:xy(10, _screen.h - 32):zoom(0.6):halign(0)
+      self:xy(10, _screen.h - 48):zoom(0.6):halign(0)
       self:settext("")
     end
   },
   LoadFont("Common Normal") .. {
     Name = "ACSubmitP2",
     InitCommand = function(self)
-      self:xy(_screen.w - 10, _screen.h - 32):zoom(0.6):halign(1)
+      self:xy(_screen.w - 10, _screen.h - 48):zoom(0.6):halign(1)
       self:settext("")
     end
-  }
+  },
+
+  -- dialog overlay used after submission
+  createACDialogActor("ACDialog")
 }
 
 moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
   InitCommand = function(self)
     self.waiting = { P1 = false, P2 = false }
+    self.dialogShown = false
   end,
   ModuleCommand = function(self)
+    -- reset dialog visibility guard on each screen entry
+    self.dialogShown = false
     local fixed = GAMESTATE:GetCurrentCourse():AllSongsAreFixed()
     local autogen = GAMESTATE:GetCurrentCourse():IsAutogen()
     local endless = GAMESTATE:GetCurrentCourse():IsEndless()
@@ -906,22 +1345,33 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       label:settext(params.ok and "✔ Arrow Cloud" or "❌ Arrow Cloud")
       self.waiting[pn] = false
     end
+    -- Show a placeholder dialog once when any response is received (regardless of waiting state)
+    if not self.dialogShown then
+      self.dialogShown = true
+      local dialog = self:GetChild("ACDialog")
+      if dialog then
+        dialog:playcommand("ShowDialog", {})
+      end
+    end
   end,
 
   LoadFont("Common Normal") .. {
     Name = "ACSubmitP1",
     InitCommand = function(self)
-      self:xy(10, _screen.h - 32):zoom(0.6):halign(0)
+      self:xy(10, _screen.h - 48):zoom(0.6):halign(0)
       self:settext("")
     end
   },
   LoadFont("Common Normal") .. {
     Name = "ACSubmitP2",
     InitCommand = function(self)
-      self:xy(_screen.w - 10, _screen.h - 32):zoom(0.6):halign(1)
+      self:xy(_screen.w - 10, _screen.h - 48):zoom(0.6):halign(1)
       self:settext("")
     end
-  }
+  },
+
+  -- dialog overlay used after submission
+  createACDialogActor("ACDialog")
 }
 
 -- ---------------------------------------------------------------------------------------------
@@ -948,7 +1398,7 @@ moduleRegistration["ScreenTitleMenu"] = Def.ActorFrame {
 
     -- Hit the hello-world endpoint (root) without auth headers.
     local url = BASE_URL .. "/"
-    NETWORK:HttpRequest{
+    NETWORK:HttpRequest {
       url = url,
       method = "GET",
       connectTimeout = 6,

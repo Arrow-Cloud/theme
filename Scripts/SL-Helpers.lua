@@ -835,7 +835,7 @@ end
 --
 -- The W0 weight may have been modified for Tournament mode purposes.
 -- Use the optional boolean argument use_actual_w0_weight to choose to fallback to the proper W0 weight.
-CalculateSuperExScore = function(player, ex_counts, use_actual_w0_weight)
+CalculateHardExScore = function(player, ex_counts, use_actual_w0_weight)
 	-- No EX scores in Casual mode, just return some dummy number early.
 	if SL.Global.GameMode == "Casual" then return 0 end
 	local StepsOrTrail = (GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentTrail(player)) or GAMESTATE:GetCurrentSteps(player)
@@ -844,8 +844,8 @@ CalculateSuperExScore = function(player, ex_counts, use_actual_w0_weight)
 	local totalHolds = StepsOrTrail:GetRadarValues(player):GetValue( "RadarCategory_Holds" )
 	local totalRolls = StepsOrTrail:GetRadarValues(player):GetValue( "RadarCategory_Rolls" )
 
-	local W0Weight = use_actual_w0_weight and 3.5 or SL.SuperExWeights["W010"]
-	local total_possible = totalSteps * W0Weight + (totalHolds + totalRolls) * SL.SuperExWeights["Held"]
+	local W0Weight = use_actual_w0_weight and 3.5 or SL.HardExWeights["W010"]
+	local total_possible = totalSteps * W0Weight + (totalHolds + totalRolls) * SL.HardExWeights["Held"]
 
 	local total_points = 0
 
@@ -856,7 +856,7 @@ CalculateSuperExScore = function(player, ex_counts, use_actual_w0_weight)
 	-- generally have a negative weight, it's a better experience to make sure the EX score reflects that.
 	if po:NoMines() then
 		local totalMines = StepsOrTrail:GetRadarValues(player):GetValue( "RadarCategory_Mines" )
-		total_points = total_points + totalMines * SL.SuperExWeights["HitMine"];
+	total_points = total_points + totalMines * SL.HardExWeights["HitMine"];
 	end
 
 	local FAplus = (SL.Metrics[SL.Global.GameMode].PercentScoreWeightW1 == SL.Metrics[SL.Global.GameMode].PercentScoreWeightW2)
@@ -868,14 +868,14 @@ CalculateSuperExScore = function(player, ex_counts, use_actual_w0_weight)
 	for key in ivalues(keys) do
 		local value = counts[key]
 		if value ~= nil then
-			total_points = total_points + value * SL.SuperExWeights[key]
+			total_points = total_points + value * SL.HardExWeights[key]
 		end
 	end
 
 	-- Run calculation for ex_counts custom keys
 	if ex_counts and counts["Holds"] and counts["Rolls"] and counts["Mines"] then
-		total_points = total_points + ((counts["Holds"] + counts["Rolls"]) * SL.SuperExWeights["Held"])
-		total_points = total_points + (counts["Mines"] * SL.SuperExWeights["HitMine"])
+		total_points = total_points + ((counts["Holds"] + counts["Rolls"]) * SL.HardExWeights["Held"])
+		total_points = total_points + (counts["Mines"] * SL.HardExWeights["HitMine"])
 	end
 
 	return math.max(0, math.floor(total_points/total_possible * 10000) / 100), total_points, total_possible

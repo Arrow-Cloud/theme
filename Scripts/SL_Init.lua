@@ -55,6 +55,7 @@ local PlayerDefaults = {
 
 				ShowFaPlusWindow = false,
 				ShowExScore = false,
+				ShowHardEXScore = false,
 				ShowFaPlusPane = true,
 				
 				RainbowMax = false,
@@ -275,7 +276,7 @@ SL = {
 			color("#66c955"),	-- green
 			color("#b45cff"),	-- purple (greatly lightened)
 			color("#ff3030"),	-- red (slightly lightened)
-      color("#ff00cc")	-- pink (super ex)
+      color("#ff00cc")	-- pink (hard ex)
 		},
 	},
 	Preferences = {
@@ -482,7 +483,7 @@ SL = {
 		Held=1,
 		HitMine=-1
 	},
-  SuperExWeights = {
+	HardExWeights = {
 		W010=3.5,
 		W110=3,
 		W2=1,
@@ -553,7 +554,7 @@ if _ArrowCloud then
 elseif not SL.ArrowCloud then
 	SL.ArrowCloud = {
 		Enabled = true,
-		BaseURL = "https://b4mdyahpki.execute-api.us-east-2.amazonaws.com/prod",
+		BaseURL = "https://api.arrowcloud.dance",
 		RequestTimeout = 5,
 		LogPath = THEME:GetCurrentThemeDirectory() .. "Other/ArrowCloud_Responses.ndjson"
 	}

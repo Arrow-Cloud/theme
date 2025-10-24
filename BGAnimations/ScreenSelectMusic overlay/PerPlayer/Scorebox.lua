@@ -48,7 +48,7 @@ local cur_style = 0
 -- 4: ITL (event)
 -- 5: ArrowCloud ITG
 -- 6: ArrowCloud EX
--- 7: ArrowCloud SuperEX
+-- 7: ArrowCloud HardEX
 -- Rotation logic treats styles with has_data=false as skipped.
 local num_styles = 7
 
@@ -66,7 +66,7 @@ local style_color = {
 	[3] = ItlPink,
 	[4] = SL.JudgmentColors["FA+"][2], -- AC ITG
 	[5] = SL.JudgmentColors["FA+"][1], -- AC EX
-	[6] = SL.JudgmentColors["FA+"][7], -- AC SuperEX
+	[6] = SL.JudgmentColors["FA+"][7], -- AC HardEX
 }
 
 local self_color = color("#a1ff94")
@@ -424,11 +424,11 @@ local ArrowCloudRequestProcessor = function(res)
 	if type(parsed.leaderboards) ~= "table" then return end
 
 	-- Map ArrowCloud types to style indices (5..7); only process what the API returned.
-	local index_map = { ITG = 5, EX = 6, SuperEX = 7 }
+	local index_map = { ITG = 5, EX = 6, HardEX = 7 }
 	for _, board in ipairs(parsed.leaderboards) do
 		local style_index = index_map[board.type]
 		if style_index and all_data[style_index] then
-			local isExType = (board.type == "EX" or board.type == "SuperEX")
+			local isExType = (board.type == "EX" or board.type == "HardEX")
 			local slot = 1
 			local any = false
 			if type(board.scores) == "table" then
@@ -864,7 +864,7 @@ local af = Def.ActorFrame{
 		OffCommand=function(self) self:stoptweening() end
 	},
 
-	-- ArrowCloud Mode Text (bottom-right ITG / EX / S.EX)
+	-- ArrowCloud Mode Text (bottom-right ITG / EX / H.EX)
 	LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal")..{
 		Name="ACModeLabel",
 		Text="",
@@ -876,14 +876,14 @@ local af = Def.ActorFrame{
 			local label = ""
 			if     cur_style == 4 then label = "ITG"
 			elseif cur_style == 5 then label = "EX"
-			elseif cur_style == 6 then label = "S.EX" end
+			elseif cur_style == 6 then label = "H.EX" end
 			if label ~= "" then
 				-- Explicit colors per request
 				if label == "ITG" then
 					self:diffuse(SL.JudgmentColors["FA+"][2])
 				elseif label == "EX" then
 					self:diffuse(SL.JudgmentColors["FA+"][1])
-				elseif label == "S.EX" then
+				elseif label == "H.EX" then
 					self:diffuse(SL.JudgmentColors["FA+"][7])
 				end
 				self:settext(label)
@@ -1060,10 +1060,10 @@ for i=1,NumEntries do
 			if score.isFail then
 				clr = Color.Red
 			elseif cur_style == 6 then
-				-- SuperEX pane: render scores in pink
+				-- HardEX pane: render scores in pink
 				clr = SL.JudgmentColors["FA+"][7]
 			elseif score.isEx then
-				-- EX scoring (non-SuperEX) in red
+				-- EX scoring (non-HardEX) in red
 				clr = SL.JudgmentColors["FA+"][1]
 			elseif score.isSelf then
 				clr = self_color

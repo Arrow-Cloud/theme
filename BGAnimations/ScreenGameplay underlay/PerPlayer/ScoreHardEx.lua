@@ -1,13 +1,24 @@
+-- luacheck: globals GetScreenAspectRatio scale left right color OtherPlayer SL_WideScale FormatPercentScore STATSMAN GAMESTATE ThemePrefs LoadFont _screen clamp ToEnumShortString PLAYER_1 PLAYER_2
+
 local player = ...
 local pn = ToEnumShortString(player)
+
+-- runtime-safe stubs for editor/lint environment (engine provides these in-game)
+if not GetScreenAspectRatio then function GetScreenAspectRatio() return 16/9 end end
+if not scale then function scale(x,a,b,c,d) return c end end
+if left == nil then left = 0 end
+if right == nil then right = 1 end
+if not color then function color(_) return {1,1,1,1} end end
+if not OtherPlayer then OtherPlayer = { [PLAYER_1]=PLAYER_2, [PLAYER_2]=PLAYER_1 } end
+if not SL_WideScale then function SL_WideScale(a,b) return b end end
 
 local mods = SL[pn].ActiveModifiers
 local IsUltraWide = (GetScreenAspectRatio() > 21/9)
 local NumPlayers = #GAMESTATE:GetHumanPlayers()
 local IsEX = SL[pn].ActiveModifiers.ShowExScore
-local IsSuperEX = SL[pn].ActiveModifiers.ShowSuperEXScore
+local IsHardEX = SL[pn].ActiveModifiers.ShowHardEXScore
 
-if not IsSuperEX then return end
+if not IsHardEX then return end
 
 -- -----------------------------------------------------------------------
 -- first, check for conditions where we might not draw the score actor at all
@@ -39,7 +50,10 @@ local StepsOrTrail = (GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentTrail(pla
 local total_tapnotes = StepsOrTrail:GetRadarValues(player):GetValue( "RadarCategory_Notes" )
 
 -- determine how many digits are needed to express the number of notes in base-10
-local digits = (math.floor(math.log10(total_tapnotes)) + 1)
+local function log10(x)
+	return math.log(x) / math.log(10)
+end
+local digits = (math.floor(log10(total_tapnotes)) + 1)
 -- subtract 4 from the digit count; we're only really interested in how many digits past 4
 -- this stepcount is so we can use it to align the score actor in the StepStats pane if needed
 -- aligned-with-4-digits is the default
@@ -57,7 +71,7 @@ local zoom_factor = clamp(scale(GetScreenAspectRatio(), 16/10, 16/9, ar_scale.si
 
 return LoadFont(ThemePrefs.Get("ThemeFont") .. " numbers")..{
 	Text="0.00",
-	Name=pn.."ScoreSuperEx",
+	Name=pn.."ScoreHardEx",
 	InitCommand=function(self)
 		if player==PLAYER_1 then
 			self:valign(0):horizalign(left)
@@ -90,7 +104,7 @@ return LoadFont(ThemePrefs.Get("ThemeFont") .. " numbers")..{
 		-----------------------------------------------------------------
 
 		-- assume "normal" score positioning first, but there are many reasons it will need to be moved
-											
+																				
 		self:xy( pos[player].x, pos[player].y )
 
 		if mods.NPSGraphAtTop and styletype ~= "OnePlayerTwoSides" then
@@ -150,7 +164,7 @@ return LoadFont(ThemePrefs.Get("ThemeFont") .. " numbers")..{
 		if params.Player ~= player then return end
 
 		if IsEX then
-			self:settext(("%.02f"):format(params.SuperExScore))
+			self:settext(("%.02f"):format(params.HardExScore))
 		end
 	end,
 }

@@ -7,7 +7,7 @@ SL = SL or {}
 SL.ArrowCloud = SL.ArrowCloud or {
 	Enabled = true,
 	-- Current temporary API base (no trailing slash)
-	BaseURL = "https://b4mdyahpki.execute-api.us-east-2.amazonaws.com/prod",
+	BaseURL = "https://api.arrowcloud.dance",
 	RequestTimeout = 5,
 	LogPath = THEME:GetCurrentThemeDirectory() .. "Other/ArrowCloud_Responses.ndjson"
 }
@@ -40,7 +40,7 @@ ArrowCloudRequest = function(chartHash)
 	if SL and SL.ArrowCloud == nil then
 		SL.ArrowCloud = {
 			Enabled = true,
-			BaseURL = "https://b4mdyahpki.execute-api.us-east-2.amazonaws.com/prod",
+			BaseURL = "https://api.arrowcloud.dance",
 			RequestTimeout = 5,
 			LogPath = THEME:GetCurrentThemeDirectory() .. "Other/ArrowCloud_Responses.ndjson"
 		}
