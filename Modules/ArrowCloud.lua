@@ -10,6 +10,45 @@ local ArrowCloud = {}
 local BASE_URL = "https://api.arrowcloud.dance"
 local MODULE_TAG = "[ArrowCloud-SLmodule]"
 
+-- Dialog Layout Configuration
+--
+-- Customize the leaderboard dialog appearance by modifying these values:
+--
+-- ROW_SPACING: Controls vertical distance between leaderboard entries (default: 18px)
+--   - Increase for more spaced out rows, decrease for tighter display
+--
+-- DIALOG_PADDING: Inner margin around dialog content (default: 40px)
+--   - Affects overall dialog size and text positioning
+--
+-- FONT_ZOOM: Text size multiplier for all dialog text (default: 0.7)
+--   - Increase for larger text, decrease for smaller text
+--
+-- Column positioning (X coordinates):
+--   RANK_COLUMN_X: Position of rank numbers (default: 24px from left)
+--   ALIAS_COLUMN_X: Position of player names (default: 30px from left)
+--   SCORE_COLUMN_OFFSET: Distance from right edge for scores (default: 64px)
+--   DELTA_COLUMN_OFFSET: Distance from right edge for delta values (default: 0px)
+--
+-- Score Type Color Coding:
+--   Scores are automatically colored based on their type (ITG=white, EX=blue, H.EX=pink)
+--   Self/rival highlighting takes priority over score type colors when applicable
+--
+local DIALOG_LAYOUT = {
+  ROW_SPACING = 18,         -- Vertical spacing between leaderboard rows
+  DIALOG_PADDING = 40,      -- Inner padding for dialog content
+  FONT_ZOOM = 0.7,          -- Font size multiplier for all text
+  RANK_COLUMN_X = 24,       -- X position for rank column
+  ALIAS_COLUMN_X = 30,      -- X position for alias/name column
+  SCORE_COLUMN_OFFSET = 64, -- Offset from right edge for score column
+  DELTA_COLUMN_OFFSET = 0,  -- Offset from right edge for delta column
+
+  -- Vertical positioning for dialog elements
+  TITLE_Y_OFFSET = 28,       -- Distance from top edge for title text
+  FREEFORM_Y_OFFSET = 60,    -- Distance from top edge for freeform text (2-line capable)
+  MODE_LABEL_Y_OFFSET = 118, -- Distance from top edge for mode label
+  BOARD_Y_OFFSET = 140       -- Distance from top edge for leaderboard start
+}
+
 -- luacheck: globals GAMESTATE PREFSMAN THEME SL PLAYER_1 PLAYER_2 STATSMAN CRYPTMAN PROFILEMAN IniFile NETWORK IsHumanPlayer FormatPercentScore CalculateExScore GetTimingWindow GetWorstJudgment BinaryToHex clamp Trace ToEnumShortString ivalues MESSAGEMAN
 
 -- forward declaration so isEligible can reference it
@@ -262,6 +301,64 @@ local function readApiKey(player)
   return { apiKey = apiKey, allowAutoplay = allowAutoplay }
 end
 
+-- Simple JSON parsing utility using JsonDecode
+local function parseArrowCloudResponse(jsonString)
+  if not jsonString or type(jsonString) ~= "string" then
+    return nil
+  end
+
+  -- Use JsonDecode to parse the entire response
+  local success, decoded = pcall(JsonDecode, jsonString)
+  if not success then
+    debugPrint("ArrowCloud: Failed to parse JSON response")
+    return nil
+  end
+
+  if not decoded or type(decoded) ~= "table" or not decoded.eventLeaderboards then
+    return nil
+  end
+
+  return decoded
+end
+
+-- Format delta values for leaderboard display
+-- Returns formatted text and color for delta values
+local function formatDelta(deltaValue)
+  local deltaText = ""
+  local deltaColor = { 1, 1, 1, 1 } -- default white
+  
+  if deltaValue == nil then
+    return deltaText, deltaColor
+  end
+
+  debugPrint("Formatting delta value: " .. tostring(deltaValue))
+
+  if deltaValue then
+    local numValue = tonumber(deltaValue)
+    if numValue and numValue == 0 then
+      debugPrint("Delta value is zero")
+      deltaText = "--"
+    elseif numValue and numValue > 0 then
+      debugPrint("Delta value is positive: " .. tostring(numValue))
+      deltaText = "+" .. tostring(numValue)
+      deltaColor = { 0.4, 1, 0.4, 1 } -- green for positive
+    elseif numValue and numValue < 0 then
+      debugPrint("Delta value is negative: " .. tostring(numValue))
+      deltaText = tostring(numValue) -- already has minus sign
+      deltaColor = { 1, 0.4, 0.4, 1 } -- red for negative
+    else
+      debugPrint("Delta value is invalid: " .. tostring(deltaValue))
+      deltaText = "--" -- fallback for invalid numbers
+    end
+  else
+    deltaText = "--"
+  end
+
+  debugPrint("Formatted delta value: " .. deltaText)
+
+  return deltaText, deltaColor
+end
+
 -- JSON encoding utilities
 local function escapeJsonString(str)
   local replacements = {
@@ -321,7 +418,6 @@ end
 -- HTTP communication
 local function sendScoreData(data, apiKey, hash, player)
   local url = BASE_URL .. "/v1/chart/" .. hash .. "/play"
-  debugPrint("HTTP POST URL: " .. url)
 
   local jsonBody = encodeJson(data)
 
@@ -338,22 +434,41 @@ local function sendScoreData(data, apiKey, hash, player)
       local status = nil
       local err = nil
       local body = ""
+      local responseData = nil
       if type(response) == "table" then
         status = response.statusCode
         err = response.error and ToEnumShortString(response.error) or nil
         body = response.body or ""
         if type(body) ~= "string" then body = tostring(body) end
-        if #body > 256 then body = body:sub(1, 256) .. "…" end
+
         ok = (status ~= nil and status >= 200 and status < 300)
+
+        -- Try to parse JSON response for dialog content
+        if ok and body and #body > 0 then
+          responseData = parseArrowCloudResponse(body)
+        end
+
+        -- Truncate body for logging after we've tried to parse it
+        if #body > 256 then body = body:sub(1, 256) .. "…" end
       else
         -- Legacy path; treat as failure but log what we saw.
         body = tostring(response)
       end
-      debugPrint("Submit response: status=" .. tostring(status) .. (err and (" error=" .. err) or "") .. " body=" .. body)
+
+      -- Log errors only
+      if not ok then
+        debugPrint("ArrowCloud submit failed: status=" .. tostring(status) .. (err and (" error=" .. err) or ""))
+      end
 
       -- Notify UI listeners on evaluation screens.
       local pn = player and ToEnumShortString(player) or nil
-      MESSAGEMAN:Broadcast("ArrowCloudSubmitResult", { ok = ok, player = pn, status = status, error = err })
+      MESSAGEMAN:Broadcast("ArrowCloudSubmitResult", {
+        ok = ok,
+        player = pn,
+        status = status,
+        error = err,
+        responseData = responseData
+      })
     end
   }
 end
@@ -816,28 +931,12 @@ end
 
 local function createACDialogActor(name)
   local af
+  local dialogData = nil            -- will hold API response data
+  local rotationActive = false      -- prevent multiple rotation timers
+  local isRotating = false          -- prevent recursive calls during rotation
+  local currentLeaderboardIndex = 1 -- Track which leaderboard we're showing
 
-  -- simple placeholder datasets for three rotating leaderboard models
-  local boardData = {
-    H_EX = {
-      { rank = "2.", name = "Wafles",      score = "98.11", delta = "+1,234", isSelf = true, isRival = false},
-      { rank = "2.", name = "RootReducer", score = "98.01", delta = "-456", isSelf = false, isRival = true },
-      { rank = "4.", name = "Cathadan",    score = "95.68", delta = "-345", isSelf = false, isRival = false },
-      { rank = "5.", name = "bkirz",       score = "94.77", delta = "-234", isSelf = false, isRival = false },
-    },
-    EX = {
-      { rank = "2.", name = "RootReducer", score = "99.21",  delta = "--", isSelf = false, isRival = true },
-      { rank = "3.", name = "Wafles",      score = "99.11",  delta = "+1,234", isSelf = true, isRival = false },
-      { rank = "4.", name = "Cathadan",    score = "98.43",  delta = "-456", isSelf = false, isRival = false },
-      { rank = "5.", name = "bkirz",       score = "97.99",  delta = "-345", isSelf = false, isRival = false },
-    },
-    ITG = {
-      { rank = "2.", name = "RootReducer", score = "100.00", delta = "--", isSelf = false, isRival = true },
-      { rank = "3.", name = "Wafles",      score = "99.98", delta = "+1,234", isSelf = true, isRival = false },
-      { rank = "4.", name = "Cathadan",    score = "99.55", delta = "-456", isSelf = false, isRival = false },
-      { rank = "5.", name = "bkirz",       score = "99.22", delta = "-345", isSelf = false, isRival = false },
-    }
-  }
+
 
   -- row highlight colors (aligned with scorebox styling)
   local function maybeColor(hex, fallback)
@@ -845,8 +944,33 @@ local function createACDialogActor(name)
     if type(c) == "function" then return c(hex) end
     return fallback
   end
-  local self_color  = maybeColor("#a1ff94", {0.631, 1.0, 0.580, 1})
-  local rival_color = maybeColor("#c29cff", {0.761, 0.612, 1.0, 1})
+  local self_color  = maybeColor("#a1ff94", { 0.631, 1.0, 0.580, 1 })
+  local rival_color = maybeColor("#c29cff", { 0.761, 0.612, 1.0, 1 })
+
+  -- Score type colors (matching theme's color scheme)
+  -- Try to use theme's existing judgment colors when available
+  local itg_color   = (SL and SL.JudgmentColors and SL.JudgmentColors["ITG"] and SL.JudgmentColors["ITG"][1]) or
+  maybeColor("#21CCE8", { 0.129, 0.8, 0.91, 1 })
+  local ex_color    = itg_color                                 -- EX scores use the same blue as ITG
+  local hex_color   = maybeColor("#ff00cc", { 1.0, 0.2, 0.406, 1 }) -- Pink for H.EX scores
+
+  -- Determine score color based on score text content
+  local function getScoreTypeColor(scoreText)
+    if not scoreText or scoreText == "" then
+      return { 1, 1, 1, 1 } -- default white
+    end
+
+    local scoreStr = tostring(scoreText):upper()
+    if scoreStr:find("H%.EX") or scoreStr:find("H.EX") or scoreStr:find("HARDEX") then
+      return hex_color
+    elseif scoreStr:find("EX") then
+      return ex_color
+    elseif scoreStr:find("ITG") then
+      return itg_color
+    else
+      return { 1, 1, 1, 1 } -- default white
+    end
+  end
 
   local function InputHandler(event)
     if not af or not af:GetVisible() then return false end
@@ -860,8 +984,163 @@ local function createACDialogActor(name)
     return false
   end
 
-  -- no-op for now; dialog content is static
-  local function applyContent() end
+  -- Apply content from API response to dialog elements
+  local function applyContent()
+    if not af or not dialogData then
+      return
+    end
+
+    -- Extract leaderboards from response
+    local allLeaderboards = {}
+    if dialogData.eventLeaderboards and #dialogData.eventLeaderboards > 0 then
+      local firstEvent = dialogData.eventLeaderboards[1]
+      if firstEvent.leaderboards and #firstEvent.leaderboards > 0 then
+        allLeaderboards = firstEvent.leaderboards
+      end
+    end
+
+    -- If no leaderboards, don't show anything
+    if #allLeaderboards == 0 then
+      return
+    end
+
+    -- Get the current leaderboard to display
+    local currentLeaderboard = allLeaderboards[currentLeaderboardIndex] or allLeaderboards[1]
+
+    if not currentLeaderboard then
+      return
+    end
+
+    local box = af:GetChild("Box")
+    debugPrint("Box found: " .. tostring(box ~= nil))
+    if box then
+      debugPrint("Box has " .. box:GetNumChildren() .. " children")
+    end
+    if not box then
+      debugPrint("No box found - available children:")
+      if af then
+        for i = 0, af:GetNumChildren() - 1 do
+          local child = af:GetChildAt(i)
+          if child and child.GetName then
+            debugPrint("  Child " .. i .. ": " .. tostring(child:GetName()))
+          end
+        end
+      end
+      return
+    end
+
+    -- Update freeform text from event messages
+    local freeformText = box:GetChild("Freeform")
+    if freeformText then
+      local messages = {}
+      -- Get messages from the first event
+      if dialogData.eventLeaderboards and #dialogData.eventLeaderboards > 0 then
+        local firstEvent = dialogData.eventLeaderboards[1]
+        if firstEvent.messages and type(firstEvent.messages) == "table" then
+          messages = firstEvent.messages
+        end
+      end
+
+      -- Render up to first 2 messages
+      local displayText = ""
+      for i = 1, math.min(2, #messages) do
+        if i > 1 then
+          displayText = displayText .. "\n"
+        end
+        displayText = displayText .. tostring(messages[i])
+      end
+
+      -- If no messages, show default text
+      if displayText == "" then
+        displayText = "New Personal Best"
+      end
+
+      freeformText:settext(displayText)
+      freeformText:diffuse(1, 1, 1, 1)
+    end
+
+    -- Update mode label
+    local modeLabel = box:GetChild("ModeLabel")
+    debugPrint("ModeLabel found: " .. tostring(modeLabel ~= nil))
+    if modeLabel then
+      local labelText = currentLeaderboard.type or ""
+      debugPrint("Setting ModeLabel text to: '" .. labelText .. "'")
+      modeLabel:settext(labelText)
+      modeLabel:diffuse(1, 1, 1, 1)
+      modeLabel:diffusealpha(0.8)
+      debugPrint("ModeLabel text after setting: '" .. tostring(modeLabel:GetText()) .. "'")
+    end
+
+    -- Update leaderboard data
+    local board = box:GetChild("Board")
+    debugPrint("Board found: " .. tostring(board ~= nil))
+    if board then
+      -- Prepare row data from API entries
+      local apiEntries = currentLeaderboard.entries or {}
+      debugPrint("Found " .. #apiEntries .. " entries in current leaderboard")
+      local rowData = {}
+
+      -- Take up to 8 entries for display
+      for i = 1, math.min(8, #apiEntries) do
+        local entry = apiEntries[i]
+
+        local rowEntry = {
+          rank = entry.rank,
+          name = entry.userAlias,
+          score = entry.score,
+          delta = entry.delta,
+          isSelf = entry.isSelf,  -- TODO: isSelf will come from backend later
+          isRival = entry.isRival -- TODO: isRival will come from backend later
+        }
+        table.insert(rowData, rowEntry)
+        debugPrint("Row " ..
+        i ..
+        ": rank=" ..
+        tostring(entry.rank) .. ", name=" .. tostring(entry.userAlias) .. ", score=" .. tostring(entry.score))
+      end
+
+      debugPrint("Calling SetMode with " .. #rowData .. " row entries")
+      -- Apply data to board rows
+      board:playcommand("SetMode", { data = rowData, leaderboardType = currentLeaderboard.type })
+    end
+
+    -- Don't set up rotation here - it will be set up after dialog is visible
+  end
+
+  -- Handle leaderboard rotation
+  local function rotateToNextLeaderboard()
+    if isRotating or not dialogData or not dialogData.eventLeaderboards then
+      return
+    end
+
+    isRotating = true
+
+    local allLeaderboards = {}
+    if dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
+      allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
+    end
+
+    if #allLeaderboards > 1 then
+      currentLeaderboardIndex = (currentLeaderboardIndex % #allLeaderboards) + 1
+      applyContent() -- Re-apply with new leaderboard
+
+      -- Schedule the next rotation using the timer
+      if af and af:GetVisible() then
+        local timer = af:GetChild("RotationTimer")
+        if timer then
+          timer:sleep(3):queuecommand("TriggerRotation")
+        end
+      else
+        debugPrint("Dialog not visible, stopping rotation")
+        rotationActive = false
+      end
+    else
+      debugPrint("Not enough leaderboards to rotate")
+      rotationActive = false
+    end
+
+    isRotating = false
+  end
 
   return Def.ActorFrame {
     Name = name or "ACDialog",
@@ -870,12 +1149,21 @@ local function createACDialogActor(name)
       self:visible(false):draworder(200)
     end,
 
-    -- external API: Show the dialog (optionally override placeholder content)
+    -- external API: Show the dialog with API response data
     ShowDialogCommand = function(self, params)
-      -- parameters currently unused; dialog content is static
+      debugPrint("=== ShowDialogCommand called ===")
+      -- Store response data for content application
+      if params and params.responseData then
+        dialogData = params.responseData
+        debugPrint("Stored responseData with " ..
+        tostring(dialogData.eventLeaderboards and #dialogData.eventLeaderboards or "no") .. " events")
+      else
+        debugPrint("No responseData provided to ShowDialogCommand")
+      end
 
-      -- defer content application to ensure children exist
-      self:queuecommand("ApplyDialogContent")
+      -- apply content immediately since children should exist
+      debugPrint("Playing ApplyDialogContent command")
+      self:playcommand("ApplyDialogContent")
 
       local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
       if topscreen then
@@ -889,18 +1177,45 @@ local function createACDialogActor(name)
       self:visible(true)
       self:stoptweening():diffusealpha(0):linear(0.15):diffusealpha(1)
       self:GetChild("Snd"):play()
-      local box = self:GetChild("Box")
-      if box then
-        local ml = box:GetChild("ModeLabel")
-        if ml then ml:playcommand("Start") end
+
+      -- Set up rotation after dialog becomes visible (only on first call)
+      if dialogData and dialogData.eventLeaderboards and dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
+        local allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
+        if #allLeaderboards > 1 and not rotationActive then
+          debugPrint("Setting up INITIAL rotation timer for " .. #allLeaderboards .. " leaderboards (after visible)")
+          rotationActive = true
+          -- Use a separate timer instead of sleep on the main ActorFrame
+          self:GetChild("RotationTimer"):playcommand("StartTimer")
+        else
+          debugPrint("Skipping rotation setup - rotationActive: " ..
+          tostring(rotationActive) .. ", leaderboards: " .. #allLeaderboards)
+        end
       end
     end,
 
     ApplyDialogContentCommand = function(self)
+      debugPrint("=== ApplyDialogContentCommand called ===")
+      debugPrint("Self exists: " .. tostring(self ~= nil))
+      debugPrint("dialogData exists: " .. tostring(dialogData ~= nil))
+      if dialogData then
+        debugPrint("dialogData.eventLeaderboards exists: " .. tostring(dialogData.eventLeaderboards ~= nil))
+        if dialogData.eventLeaderboards then
+          debugPrint("Number of events: " .. #dialogData.eventLeaderboards)
+        end
+      end
       applyContent()
     end,
 
+    -- Handle leaderboard rotation
+    RotateLeaderboardCommand = function(self)
+      debugPrint("=== RotateLeaderboardCommand triggered ===")
+      rotateToNextLeaderboard()
+    end,
+
     HideCommand = function(self)
+      debugPrint("=== HideCommand called ===")
+      rotationActive = false -- reset rotation state
+      isRotating = false     -- reset rotation guard
       local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
       if topscreen then
         topscreen:RemoveInputCallback(InputHandler)
@@ -989,15 +1304,15 @@ local function createACDialogActor(name)
       },
 
       -- header text (BLUE SHIFT) centered along the top
-      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+      LoadFont(ThemePrefs.Get("ThemeFont") .. " Header") .. {
         Name = "LogoText",
         InitCommand = function(self)
           local w, h = ACDialogSize()
-          self:xy(0, -(h / 2) + 14)
+          self:xy(0, -(h / 2) + DIALOG_LAYOUT.TITLE_Y_OFFSET)
           self:halign(0.5)
-          self:zoom(1.2)
+          self:zoom(0.8)
           -- rgb(1,89,227)
-          self:diffuse(1/255, 89/255, 227/255, 1)
+          self:diffuse(1 / 255, 89 / 255, 227 / 255, 1)
           self:settext("BLUE SHIFT")
         end
       },
@@ -1007,193 +1322,281 @@ local function createACDialogActor(name)
         Name = "Freeform",
         InitCommand = function(self)
           local w, h = ACDialogSize()
-          self:xy(0, -(h / 2) + 64)
+          self:xy(0, -(h / 2) + DIALOG_LAYOUT.FREEFORM_Y_OFFSET)
           self:halign(0.5)
+          self:valign(0)
           self:zoom(1)
           self:diffuse(1, 1, 1, 1)
           self:settext("New Personal Best")
         end
       },
 
-  -- rotating leaderboard mode label (ITG / EX / H.EX)
+      -- leaderboard mode label (from API response)
       LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
         Name = "ModeLabel",
         InitCommand = function(self)
           local w, h = ACDialogSize()
-          self:xy(0, -(h / 2) + 96)
+          self:xy(0, -(h / 2) + DIALOG_LAYOUT.MODE_LABEL_Y_OFFSET)
           self:halign(0.5)
           self:zoom(0.7)
           self:diffusealpha(0)
-        end,
-        StartCommand = function(self)
-          local box = self:GetParent()
-          box.modeIndex = 1
-          self:stoptweening():queuecommand("Apply"):queuecommand("Next")
-        end,
-        ApplyCommand = function(self)
-          local box = self:GetParent()
-          local idx = box.modeIndex or 1
-          local label, clr
-          if idx == 1 then
-            label = "ITG"; clr = SL and SL.JudgmentColors and SL.JudgmentColors["FA+"] and SL.JudgmentColors["FA+"][2] or Color.White
-          elseif idx == 2 then
-            label = "EX";  clr = SL and SL.JudgmentColors and SL.JudgmentColors["FA+"] and SL.JudgmentColors["FA+"][1] or Color.White
-          else
-            label = "H.EX"; clr = SL and SL.JudgmentColors and SL.JudgmentColors["FA+"] and SL.JudgmentColors["FA+"][7] or Color.White
-          end
-          self:settext(label)
-          self:diffuse(clr)
-          self:linear(0.15):diffusealpha(0.8)
-          local board = box:GetChild("Board")
-          if board then
-            local key = (idx == 1 and "ITG") or (idx == 2 and "EX") or "H_EX"
-            board:playcommand("SetMode", { key = key })
-          end
-        end,
-        NextCommand = function(self)
-          local box = self:GetParent()
-          box.modeIndex = ((box.modeIndex or 1) % 3) + 1
-          self:sleep(3.0):queuecommand("Apply")
-          self:sleep(0.0):queuecommand("Next")
+          self:settext("") -- will be set by applyContent()
         end
-      },
-
-      -- Hardcoded leaderboard table (rank, alias, score, point delta)
+      },                   -- Hardcoded leaderboard table (rank, alias, score, point delta)
       Def.ActorFrame {
         Name = "Board",
         InitCommand = function(self)
           local w, h = ACDialogSize()
-          self:xy(-(w / 2) + 20, -(h / 2) + 120)
+          self:xy(-(w / 2) + 20, -(h / 2) + DIALOG_LAYOUT.BOARD_Y_OFFSET)
           -- compute and stash column anchors for children to use
-          self.innerW     = w - 40
-          self.rankRight  = 24               -- right-aligned rank near left
-          self.nameLeft   = 30               -- name starts a bit after rank
-          self.scoreRight = self.innerW - 64 -- score aligns near the right
-          self.deltaRight = self.innerW      -- delta flush-right, fills width
+          self.innerW     = w - DIALOG_LAYOUT.DIALOG_PADDING
+          self.rankRight  = DIALOG_LAYOUT.RANK_COLUMN_X                     -- right-aligned rank near left
+          self.nameLeft   = DIALOG_LAYOUT.ALIAS_COLUMN_X                    -- name starts a bit after rank
+          self.scoreRight = self.innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET -- score aligns near the right
+          self.deltaRight = self.innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET -- delta flush-right, fills width
         end,
         SetModeCommand = function(self, params)
-          local key = params and params.key or "ITG"
-          local rows = boardData[key] or boardData.ITG
+          local rows = params and params.data or {}
+          local leaderboardType = params and params.leaderboardType or ""
+
           local function applyRow(rowName, data)
             local row = self:GetChild(rowName)
-            if not row then return end
+            if not row then
+              return
+            end
             local rankNode  = row:GetChild("Rank")
             local aliasNode = row:GetChild("Alias")
             local scoreNode = row:GetChild("Score")
             local deltaNode = row:GetChild("Delta")
 
             -- set texts
-            rankNode:settext(data.rank or "")
-            aliasNode:settext(data.name or "")
-            scoreNode:settext(data.score or "")
+            local rankText  = data.rank and (tostring(data.rank) .. ".") or ""
+            local aliasText = data.name or ""
+            local scoreText = data.score or ""
 
-            -- row highlight for self/rival
-            local clr = nil
+            -- Add emojis for self/rival
             if data.isSelf then
-              clr = self_color
+              aliasText = aliasText .. " 🙂"
             elseif data.isRival then
-              clr = rival_color
-            end
-            if clr then
-              rankNode:diffuse(clr)
-              aliasNode:diffuse(clr)
-              scoreNode:diffuse(clr)
-            else
-              rankNode:diffuse(1,1,1,1)
-              aliasNode:diffuse(1,1,1,1)
-              scoreNode:diffuse(1,1,1,1)
+              aliasText = aliasText .. " ⚔"
             end
 
-            local d = tostring(data.delta or "")
-            if d:sub(1,1) == "+" then
-              deltaNode:diffuse(0.4,1,0.4,1)
-            elseif d:sub(1,1) == "-" then
-              deltaNode:diffuse(1,0.4,0.4,1)
-            else
-              deltaNode:diffuse(1,1,1,1)
+            rankNode:settext(rankText)
+            aliasNode:settext(aliasText)
+            scoreNode:settext(scoreText)
+
+            -- row highlight for self/rival (but preserve score type and delta colors)
+            local rowColor = nil
+            if data.isSelf then
+              rowColor = self_color
+            elseif data.isRival then
+              rowColor = rival_color
             end
-            deltaNode:settext(d)
+
+            -- Apply row highlighting to rank and alias columns
+            if rowColor then
+              rankNode:diffuse(rowColor)
+              aliasNode:diffuse(rowColor)
+            else
+              rankNode:diffuse(1, 1, 1, 1)
+              aliasNode:diffuse(1, 1, 1, 1)
+            end
+
+            -- Score column: self/rival color takes priority, otherwise use score type color
+            if rowColor then
+              scoreNode:diffuse(rowColor)
+            else
+              local scoreTypeColor = getScoreTypeColor(leaderboardType)
+              scoreNode:diffuse(scoreTypeColor)
+            end
+
+            -- Format delta column using helper function
+            local deltaText, deltaColor = formatDelta(data.delta)
+
+            deltaNode:diffuse(deltaColor)
+            deltaNode:settext(deltaText)
           end
+
+          -- Apply data to each row (up to 8 entries)
           applyRow("Row2", rows[1] or {})
           applyRow("Row3", rows[2] or {})
           applyRow("Row4", rows[3] or {})
           applyRow("Row5", rows[4] or {})
+          applyRow("Row6", rows[5] or {})
+          applyRow("Row7", rows[6] or {})
+          applyRow("Row8", rows[7] or {})
+          applyRow("Row9", rows[8] or {})
         end,
 
         -- Row helper: four columns (rank, name, score, delta)
         Def.ActorFrame { Name = "Row2",
-          InitCommand = function(self) self:y(0) end,
+          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 0) end,
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             local w = ACDialogSize()
-            local innerW = w - 40
-            self:xy(24, 0):halign(1):zoom(0.7):settext("2.")
+            local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(30, 0):halign(0):zoom(0.7):diffuse(1, 1, 1, 1):settext("RootReducer")
+            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
+            "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize()
-            local innerW = w - 40
-            self:xy(innerW - 64, 0):halign(1):zoom(0.7):settext("99.21")
+            local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize()
-            local innerW = w - 40
-            self:xy(innerW, 0):halign(1):zoom(0.7):diffuse(1, 1, 1, 1):settext("--")
+            local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
+              1, 1):settext("")
           end },
         },
         Def.ActorFrame { Name = "Row3",
-          InitCommand = function(self) self:y(24) end,
+          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 1) end,
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(24, 0):halign(1):zoom(0.7):settext("3.")
+            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(30, 0):halign(0):zoom(0.7):diffuse(1, 1, 1, 1):settext("Wafles")
+            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
+            "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - 40
-            self:xy(innerW - 64, 0):halign(1):zoom(0.7):settext("99.11")
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - 40
-            self:xy(innerW, 0):halign(1):zoom(0.7):diffuse(0.4, 1, 0.4, 1):settext("+1,234")
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
+              1, 1):settext("")
           end },
         },
         Def.ActorFrame { Name = "Row4",
-        InitCommand = function(self) self:y(48) end,
+          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 2) end,
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(24, 0):halign(1):zoom(0.7):settext("4.")
+            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(30, 0):halign(0):zoom(0.7):diffuse(1, 1, 1, 1):settext("Cathadan")
+            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
+            "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - 40
-            self:xy(innerW - 64, 0):halign(1):zoom(0.7):settext("98.43")
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - 40
-            self:xy(innerW, 0):halign(1):zoom(0.7):diffuse(1, 0.4, 0.4, 1):settext("-456")
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
+              1, 1):settext("")
           end },
         },
         Def.ActorFrame { Name = "Row5",
-          InitCommand = function(self) self:y(72) end,
+          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 3) end,
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(24, 0):halign(1):zoom(0.7):settext("5.")
+            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(30, 0):halign(0):zoom(0.7):diffuse(1, 1, 1, 1):settext("bkirz")
+            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
+            "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - 40
-            self:xy(innerW - 64, 0):halign(1):zoom(0.7):settext("97.99")
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - 40
-            self:xy(innerW, 0):halign(1):zoom(0.7):diffuse(1, 0.4, 0.4, 1):settext("-345")
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
+              1, 1):settext("")
+          end },
+        },
+        Def.ActorFrame { Name = "Row6",
+          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 4) end,
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
+            "")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
+              1, 1):settext("")
+          end },
+        },
+        Def.ActorFrame { Name = "Row7",
+          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 5) end,
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
+            "")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
+              1, 1):settext("")
+          end },
+        },
+        Def.ActorFrame { Name = "Row8",
+          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 6) end,
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
+            "")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
+              1, 1):settext("")
+          end },
+        },
+        Def.ActorFrame { Name = "Row9",
+          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 7) end,
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
+            "")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
+          end },
+          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
+            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
+              1, 1):settext("")
           end },
         },
       }
+    },
+
+    -- Separate timer ActorFrame for rotation
+    Def.ActorFrame {
+      Name = "RotationTimer",
+      StartTimerCommand = function(self)
+        self:sleep(3.2):queuecommand("TriggerRotation")
+      end,
+      TriggerRotationCommand = function(self)
+        af:playcommand("RotateLeaderboard")
+      end
     }
   }
 end
@@ -1245,21 +1648,37 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   end,
 
   ArrowCloudSubmitResultMessageCommand = function(self, params)
-    if not params or not params.player then return end
+    debugPrint("=== ArrowCloudSubmitResultMessageCommand (ScreenEvaluationStage) ===")
+    if not params or not params.player then
+      debugPrint("No params or player provided")
+      return
+    end
     local pn = params.player
+    debugPrint("Player: " .. pn .. ", ok: " .. tostring(params.ok))
+    debugPrint("Has responseData: " .. tostring(params.responseData ~= nil))
+    if params.responseData then
+      debugPrint("ResponseData has eventLeaderboards: " .. tostring(params.responseData.eventLeaderboards ~= nil))
+    end
+
     local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
     if not label then return end
     if self.waiting[pn] then
       label:settext(params.ok and "✔ Arrow Cloud" or "❌ Arrow Cloud")
       self.waiting[pn] = false
     end
-    -- Show a placeholder dialog once when any response is received (regardless of waiting state)
-    if not self.dialogShown then
+    -- Show dialog only if we have valid response data with eventLeaderboards
+    if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards then
+      debugPrint("Showing dialog with responseData")
       self.dialogShown = true
       local dialog = self:GetChild("ACDialog")
       if dialog then
-        dialog:playcommand("ShowDialog", {})
+        dialog:playcommand("ShowDialog", { responseData = params.responseData })
+      else
+        debugPrint("No ACDialog found!")
       end
+    else
+      debugPrint("Not showing dialog - dialogShown: " ..
+      tostring(self.dialogShown) .. ", hasResponseData: " .. tostring(params.responseData ~= nil))
     end
   end,
 
@@ -1345,12 +1764,12 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       label:settext(params.ok and "✔ Arrow Cloud" or "❌ Arrow Cloud")
       self.waiting[pn] = false
     end
-    -- Show a placeholder dialog once when any response is received (regardless of waiting state)
-    if not self.dialogShown then
+    -- Show dialog only if we have valid response data with eventLeaderboards
+    if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards then
       self.dialogShown = true
       local dialog = self:GetChild("ACDialog")
       if dialog then
-        dialog:playcommand("ShowDialog", {})
+        dialog:playcommand("ShowDialog", { responseData = params.responseData })
       end
     end
   end,
