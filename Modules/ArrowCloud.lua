@@ -338,10 +338,10 @@ local function formatDelta(deltaValue)
       deltaText = "+" .. tostring(numValue)
       deltaColor = { 0.4, 1, 0.4, 1 } -- green for positive
     elseif numValue and numValue < 0 then
-      deltaText = tostring(numValue) -- already has minus sign
+      deltaText = tostring(numValue)  -- already has minus sign
       deltaColor = { 1, 0.4, 0.4, 1 } -- red for negative
     else
-      deltaText = "--" -- fallback for invalid numbers
+      deltaText = "--"                -- fallback for invalid numbers
     end
   else
     deltaText = "--"
@@ -944,8 +944,8 @@ local function createACDialogActor(name)
   -- Score type colors (matching theme's color scheme)
   -- Try to use theme's existing judgment colors when available
   local itg_color   = (SL and SL.JudgmentColors and SL.JudgmentColors["ITG"] and SL.JudgmentColors["ITG"][1]) or
-  maybeColor("#21CCE8", { 0.129, 0.8, 0.91, 1 })
-  local ex_color    = itg_color                                 -- EX scores use the same blue as ITG
+      maybeColor("#21CCE8", { 0.129, 0.8, 0.91, 1 })
+  local ex_color    = itg_color                                     -- EX scores use the same blue as ITG
   local hex_color   = maybeColor("#ff00cc", { 1.0, 0.2, 0.406, 1 }) -- Pink for H.EX scores
 
   -- Determine score color based on score text content
@@ -1151,7 +1151,7 @@ local function createACDialogActor(name)
       rotationActive = false
       isRotating = false
       currentLeaderboardIndex = 1
-      
+
       -- Store response data for content application
       if params and params.responseData then
         dialogData = params.responseData
@@ -1424,7 +1424,7 @@ local function createACDialogActor(name)
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-            "")
+              "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize()
@@ -1445,7 +1445,7 @@ local function createACDialogActor(name)
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-            "")
+              "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
@@ -1464,7 +1464,7 @@ local function createACDialogActor(name)
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-            "")
+              "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
@@ -1483,7 +1483,7 @@ local function createACDialogActor(name)
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-            "")
+              "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
@@ -1502,7 +1502,7 @@ local function createACDialogActor(name)
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-            "")
+              "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
@@ -1521,7 +1521,7 @@ local function createACDialogActor(name)
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-            "")
+              "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
@@ -1540,7 +1540,7 @@ local function createACDialogActor(name)
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-            "")
+              "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
@@ -1559,7 +1559,7 @@ local function createACDialogActor(name)
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-            "")
+              "")
           end },
           LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
@@ -1598,18 +1598,22 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   ModuleCommand = function(self)
     -- reset dialog visibility guard on each screen entry
     self.dialogShown = false
-    
+
     -- Reset dialog state to prevent persistence from previous visits
     local dialog = self:GetChild("ACDialog")
     if dialog then
       dialog:playcommand("ResetDialogState")
     end
-    
+
     -- Clear previous texts
     local p1Text = self:GetChild("ACSubmitP1")
     local p2Text = self:GetChild("ACSubmitP2")
+    local p1ErrMsg = self:GetChild("ACErrorP1")
+    local p2ErrMsg = self:GetChild("ACErrorP2")
     if p1Text then p1Text:settext("") end
     if p2Text then p2Text:settext("") end
+    if p1ErrMsg then p1ErrMsg:settext("") end
+    if p2ErrMsg then p2ErrMsg:settext("") end
     self.waiting = { P1 = false, P2 = false }
 
     local style = GAMESTATE:GetCurrentStyle():GetName()
@@ -1633,6 +1637,15 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
         sendScoreData(data, apiKey, hash, player)
       else
         if label then label:settext("❌ Arrow Cloud") end
+
+        if apiKey == nil or apiKey == "" then
+          debugPrint("No API key configured for " .. pn)
+          local errLabel = (pn == "P1") and p1ErrMsg or p2ErrMsg
+          if errLabel then
+            errLabel:settext("Arrow Cloud API key not configured.")
+          end
+        end
+
         if apiKey ~= nil and not eligibility.ok then
           debugPrint("Skipping submission (ineligible)")
         end
@@ -1647,9 +1660,20 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     local pn = params.player
 
     local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
+    local errLabel = self:GetChild(pn == "P1" and "ACErrorP1" or "ACErrorP2")
+
     if not label then return end
     if self.waiting[pn] then
       label:settext(params.ok and "✔ Arrow Cloud" or "❌ Arrow Cloud")
+
+      if not params.ok and params.status == 401 then
+        errLabel:settext("Status: 401. Check your API key.")
+      elseif not params.ok and params.status == 0 then
+        errLabel:settext("You are offline.")
+      elseif not params.ok then
+        errLabel:settext("Status: " .. tostring(params.status) .. ". " .. (params.message or "Unknown error."))
+      end
+
       self.waiting[pn] = false
     end
     -- Show dialog only if we have valid response data with eventLeaderboards
@@ -1684,6 +1708,22 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       self:settext("")
     end
   },
+  LoadFont("Common Normal") .. {
+    Name = "ACErrorP1",
+    InitCommand = function(self)
+      self:xy(10, _screen.h - 64):zoom(0.5):halign(0)
+      self:settext("")
+      self:diffusecolor({ 1, 1, 1, 1 })
+    end
+  },
+  LoadFont("Common Normal") .. {
+    Name = "ACErrorP2",
+    InitCommand = function(self)
+      self:xy(_screen.w - 10, _screen.h - 64):zoom(0.5):halign(1)
+      self:settext("")
+      self:diffusecolor({ 1, 1, 1, 1 })
+    end
+  },
 
   -- dialog overlay used after submission
   createACDialogActor("ACDialog")
@@ -1697,13 +1737,13 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
   ModuleCommand = function(self)
     -- reset dialog visibility guard on each screen entry
     self.dialogShown = false
-    
+
     -- Reset dialog state to prevent persistence from previous visits
     local dialog = self:GetChild("ACDialog")
     if dialog then
       dialog:playcommand("ResetDialogState")
     end
-    
+
     local fixed = GAMESTATE:GetCurrentCourse():AllSongsAreFixed()
     local autogen = GAMESTATE:GetCurrentCourse():IsAutogen()
     local endless = GAMESTATE:GetCurrentCourse():IsEndless()
@@ -1813,6 +1853,7 @@ moduleRegistration["ScreenTitleMenu"] = Def.ActorFrame {
   -- Perform the auth check.
   CheckConnectionCommand = function(self)
     local bmt = self:GetChild("Status")
+    local errMsg = self:GetChild("ErrorMessage")
     if not bmt then return end
 
     -- start with a neutral label while checking
@@ -1843,6 +1884,9 @@ moduleRegistration["ScreenTitleMenu"] = Def.ActorFrame {
           bmt:settext("✔ Arrow Cloud")
         else
           bmt:settext("❌ Arrow Cloud")
+          if err == "Blocked" then
+            errMsg:settext("Host not configured in Preferences.ini\nAdd \"*.arrowcloud.dance\" to HttpAllowHosts")
+          end
         end
       end
     }
@@ -1854,6 +1898,15 @@ moduleRegistration["ScreenTitleMenu"] = Def.ActorFrame {
     InitCommand = function(self)
       self:halign(1)
       self:settext("Arrow Cloud")
+    end
+  },
+
+  LoadFont("Common Normal") .. {
+    Name = "ErrorMessage",
+    InitCommand = function(self)
+      self:xy(0, 24):halign(1)
+      self:zoom(0.6)
+      self:settext("")
     end
   }
 }
