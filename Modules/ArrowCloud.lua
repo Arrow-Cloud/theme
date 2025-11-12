@@ -928,7 +928,7 @@ local function createACDialogActor(name)
   local rotationActive = false      -- prevent multiple rotation timers
   local isRotating = false          -- prevent recursive calls during rotation
   local currentLeaderboardIndex = 1 -- Track which leaderboard we're showing
-  local inputHandler = nil          -- store input handler reference for proper cleanup
+  local autoRotationEnabled = true -- track if auto-rotation should continue
 
 
 
@@ -964,19 +964,6 @@ local function createACDialogActor(name)
     else
       return { 1, 1, 1, 1 } -- default white
     end
-  end
-
-  -- Create input handler function with proper closure
-  inputHandler = function(event)
-    if not af or not af:GetVisible() then return false end
-    if not event or not event.PlayerNumber or not event.button then return false end
-    if event.type == "InputEventType_FirstPress" then
-      if event.GameButton == "Back" or event.GameButton == "Start" or event.GameButton == "Select" then
-        af:queuecommand("Hide")
-        return true
-      end
-    end
-    return false
   end
 
   -- Apply content from API response to dialog elements
@@ -1105,8 +1092,8 @@ local function createACDialogActor(name)
       currentLeaderboardIndex = (currentLeaderboardIndex % #allLeaderboards) + 1
       applyContent() -- Re-apply with new leaderboard
 
-      -- Schedule the next rotation using the timer
-      if af and af:GetVisible() then
+      -- Schedule the next rotation using the timer (only if auto-rotation is enabled)
+      if af and af:GetVisible() and autoRotationEnabled then
         local timer = af:GetChild("RotationTimer")
         if timer then
           timer:sleep(3):queuecommand("TriggerRotation")
@@ -1119,6 +1106,50 @@ local function createACDialogActor(name)
     end
 
     isRotating = false
+  end
+
+  -- Manual navigation functions
+  local function navigateToNextLeaderboard()
+    if not dialogData or not dialogData.eventLeaderboards then
+      return
+    end
+
+    local allLeaderboards = {}
+    if dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
+      allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
+    end
+
+    if #allLeaderboards > 1 then
+      -- Disable auto-rotation when manual navigation is used
+      autoRotationEnabled = false
+      rotationActive = false
+
+      currentLeaderboardIndex = (currentLeaderboardIndex % #allLeaderboards) + 1
+      applyContent() -- Re-apply with new leaderboard
+    end
+  end
+
+  local function navigateToPrevLeaderboard()
+    if not dialogData or not dialogData.eventLeaderboards then
+      return
+    end
+
+    local allLeaderboards = {}
+    if dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
+      allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
+    end
+
+    if #allLeaderboards > 1 then
+      -- Disable auto-rotation when manual navigation is used
+      autoRotationEnabled = false
+      rotationActive = false
+
+      currentLeaderboardIndex = currentLeaderboardIndex - 1
+      if currentLeaderboardIndex < 1 then
+        currentLeaderboardIndex = #allLeaderboards
+      end
+      applyContent() -- Re-apply with new leaderboard
+    end
   end
 
   return Def.ActorFrame {
@@ -1134,13 +1165,14 @@ local function createACDialogActor(name)
       rotationActive = false
       isRotating = false
       currentLeaderboardIndex = 1
+      autoRotationEnabled = true
       self:visible(false)
-      -- Ensure input is not redirected
-      local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
-      if topscreen and inputHandler then
-        topscreen:RemoveInputCallback(inputHandler)
-        for player in ivalues(PlayerNumber) do
-          SCREENMAN:set_input_redirected(player, false)
+      -- Ensure normal evaluation input is restored
+      local overlay = SCREENMAN:GetTopScreen() and SCREENMAN:GetTopScreen():GetChild("Overlay")
+      if overlay then
+        local evalCommon = overlay:GetChild("ScreenEval Common")
+        if evalCommon then
+          evalCommon:queuecommand("DirectInputToEngine")
         end
       end
     end,
@@ -1151,25 +1183,21 @@ local function createACDialogActor(name)
       rotationActive = false
       isRotating = false
       currentLeaderboardIndex = 1
-
+      autoRotationEnabled = true
+      
       -- Store response data for content application
       if params and params.responseData then
         dialogData = params.responseData
       else
         dialogData = nil
         return -- Don't show dialog without data
-      end
-
-      -- apply content immediately since children should exist
+      end      -- apply content immediately since children should exist
       self:playcommand("ApplyDialogContent")
 
-      local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
-      if topscreen and inputHandler then
-        -- prevent underlying screen input
-        for player in ivalues(PlayerNumber) do
-          SCREENMAN:set_input_redirected(player, true)
-        end
-        topscreen:AddInputCallback(inputHandler)
+      -- Switch to event overlay input handling like ITL/SRPG
+      local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
+      if overlay then
+        overlay:queuecommand("DirectInputToEventOverlayHandler")
       end
 
       self:visible(true)
@@ -1191,21 +1219,51 @@ local function createACDialogActor(name)
       applyContent()
     end,
 
+    -- Handle input events via message broadcasting (like ITL/SRPG panels)
+    EventOverlayInputEventMessageCommand = function(self, event)
+      debugPrint("ArrowCloud EventOverlay Input - Event received: " .. tostring(event and event.GameButton or "nil"))
+      debugPrint("ArrowCloud Dialog visible: " .. tostring(af and af:GetVisible() or "nil"))
+      
+      if not af or not af:GetVisible() then return end
+      if not event or not event.PlayerNumber or not event.button then return end
+      if event.type == "InputEventType_FirstPress" then
+        debugPrint("ArrowCloud EventOverlay Input: " .. tostring(event.GameButton))
+        
+        if event.GameButton == "Back" or event.GameButton == "Start" or event.GameButton == "Select" then
+          debugPrint("ArrowCloud: Dismissing dialog via EventOverlay")
+          af:queuecommand("Hide")
+        elseif event.GameButton == "MenuRight" then
+          debugPrint("ArrowCloud: Navigate to next leaderboard via EventOverlay")
+          navigateToNextLeaderboard()
+        elseif event.GameButton == "MenuLeft" then
+          debugPrint("ArrowCloud: Navigate to previous leaderboard via EventOverlay")
+          navigateToPrevLeaderboard()
+        end
+      end
+    end,
+
     -- Handle leaderboard rotation
     RotateLeaderboardCommand = function(self)
       rotateToNextLeaderboard()
     end,
 
-    HideCommand = function(self)
+    -- Manual navigation commands  
+    NextLeaderboardCommand = function(self)
+      navigateToNextLeaderboard()
+    end,
+
+    PrevLeaderboardCommand = function(self)
+      navigateToPrevLeaderboard()
+    end,    HideCommand = function(self)
       rotationActive = false -- reset rotation state
       isRotating = false     -- reset rotation guard
-      local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
-      if topscreen and inputHandler then
-        topscreen:RemoveInputCallback(inputHandler)
-        for player in ivalues(PlayerNumber) do
-          SCREENMAN:set_input_redirected(player, false)
-        end
+      
+      -- Restore normal evaluation input handling
+      local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
+      if overlay then
+        overlay:queuecommand("DirectInputToEngine")
       end
+      
       self:stoptweening():linear(0.15):diffusealpha(0)
       self:sleep(0.16):queuecommand("AfterHide")
     end,
@@ -1215,6 +1273,7 @@ local function createACDialogActor(name)
       -- Clear dialog data when fully hidden to prevent persistence
       dialogData = nil
       currentLeaderboardIndex = 1
+      autoRotationEnabled = true
     end,
 
     -- sfx (re-use prompt sound)
