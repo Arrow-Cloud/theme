@@ -326,28 +326,21 @@ end
 local function formatDelta(deltaValue)
   local deltaText = ""
   local deltaColor = { 1, 1, 1, 1 } -- default white
-  
   if deltaValue == nil then
     return deltaText, deltaColor
   end
 
-  debugPrint("Formatting delta value: " .. tostring(deltaValue))
-
   if deltaValue then
     local numValue = tonumber(deltaValue)
     if numValue and numValue == 0 then
-      debugPrint("Delta value is zero")
       deltaText = "--"
     elseif numValue and numValue > 0 then
-      debugPrint("Delta value is positive: " .. tostring(numValue))
       deltaText = "+" .. tostring(numValue)
       deltaColor = { 0.4, 1, 0.4, 1 } -- green for positive
     elseif numValue and numValue < 0 then
-      debugPrint("Delta value is negative: " .. tostring(numValue))
       deltaText = tostring(numValue) -- already has minus sign
       deltaColor = { 1, 0.4, 0.4, 1 } -- red for negative
     else
-      debugPrint("Delta value is invalid: " .. tostring(deltaValue))
       deltaText = "--" -- fallback for invalid numbers
     end
   else
@@ -935,6 +928,7 @@ local function createACDialogActor(name)
   local rotationActive = false      -- prevent multiple rotation timers
   local isRotating = false          -- prevent recursive calls during rotation
   local currentLeaderboardIndex = 1 -- Track which leaderboard we're showing
+  local inputHandler = nil          -- store input handler reference for proper cleanup
 
 
 
@@ -972,7 +966,8 @@ local function createACDialogActor(name)
     end
   end
 
-  local function InputHandler(event)
+  -- Create input handler function with proper closure
+  inputHandler = function(event)
     if not af or not af:GetVisible() then return false end
     if not event or not event.PlayerNumber or not event.button then return false end
     if event.type == "InputEventType_FirstPress" then
@@ -1012,10 +1007,6 @@ local function createACDialogActor(name)
     end
 
     local box = af:GetChild("Box")
-    debugPrint("Box found: " .. tostring(box ~= nil))
-    if box then
-      debugPrint("Box has " .. box:GetNumChildren() .. " children")
-    end
     if not box then
       debugPrint("No box found - available children:")
       if af then
@@ -1061,23 +1052,18 @@ local function createACDialogActor(name)
 
     -- Update mode label
     local modeLabel = box:GetChild("ModeLabel")
-    debugPrint("ModeLabel found: " .. tostring(modeLabel ~= nil))
     if modeLabel then
       local labelText = currentLeaderboard.type or ""
-      debugPrint("Setting ModeLabel text to: '" .. labelText .. "'")
       modeLabel:settext(labelText)
       modeLabel:diffuse(1, 1, 1, 1)
       modeLabel:diffusealpha(0.8)
-      debugPrint("ModeLabel text after setting: '" .. tostring(modeLabel:GetText()) .. "'")
     end
 
     -- Update leaderboard data
     local board = box:GetChild("Board")
-    debugPrint("Board found: " .. tostring(board ~= nil))
     if board then
       -- Prepare row data from API entries
       local apiEntries = currentLeaderboard.entries or {}
-      debugPrint("Found " .. #apiEntries .. " entries in current leaderboard")
       local rowData = {}
 
       -- Take up to 8 entries for display
@@ -1093,13 +1079,8 @@ local function createACDialogActor(name)
           isRival = entry.isRival -- TODO: isRival will come from backend later
         }
         table.insert(rowData, rowEntry)
-        debugPrint("Row " ..
-        i ..
-        ": rank=" ..
-        tostring(entry.rank) .. ", name=" .. tostring(entry.userAlias) .. ", score=" .. tostring(entry.score))
       end
 
-      debugPrint("Calling SetMode with " .. #rowData .. " row entries")
       -- Apply data to board rows
       board:playcommand("SetMode", { data = rowData, leaderboardType = currentLeaderboard.type })
     end
@@ -1131,11 +1112,9 @@ local function createACDialogActor(name)
           timer:sleep(3):queuecommand("TriggerRotation")
         end
       else
-        debugPrint("Dialog not visible, stopping rotation")
         rotationActive = false
       end
     else
-      debugPrint("Not enough leaderboards to rotate")
       rotationActive = false
     end
 
@@ -1149,29 +1128,48 @@ local function createACDialogActor(name)
       self:visible(false):draworder(200)
     end,
 
+    -- Reset dialog state when the ActorFrame is created/reset
+    ResetDialogStateCommand = function(self)
+      dialogData = nil
+      rotationActive = false
+      isRotating = false
+      currentLeaderboardIndex = 1
+      self:visible(false)
+      -- Ensure input is not redirected
+      local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
+      if topscreen and inputHandler then
+        topscreen:RemoveInputCallback(inputHandler)
+        for player in ivalues(PlayerNumber) do
+          SCREENMAN:set_input_redirected(player, false)
+        end
+      end
+    end,
+
     -- external API: Show the dialog with API response data
     ShowDialogCommand = function(self, params)
-      debugPrint("=== ShowDialogCommand called ===")
+      -- Reset state before showing new dialog
+      rotationActive = false
+      isRotating = false
+      currentLeaderboardIndex = 1
+      
       -- Store response data for content application
       if params and params.responseData then
         dialogData = params.responseData
-        debugPrint("Stored responseData with " ..
-        tostring(dialogData.eventLeaderboards and #dialogData.eventLeaderboards or "no") .. " events")
       else
-        debugPrint("No responseData provided to ShowDialogCommand")
+        dialogData = nil
+        return -- Don't show dialog without data
       end
 
       -- apply content immediately since children should exist
-      debugPrint("Playing ApplyDialogContent command")
       self:playcommand("ApplyDialogContent")
 
       local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
-      if topscreen then
+      if topscreen and inputHandler then
         -- prevent underlying screen input
         for player in ivalues(PlayerNumber) do
           SCREENMAN:set_input_redirected(player, true)
         end
-        topscreen:AddInputCallback(InputHandler)
+        topscreen:AddInputCallback(inputHandler)
       end
 
       self:visible(true)
@@ -1182,43 +1180,28 @@ local function createACDialogActor(name)
       if dialogData and dialogData.eventLeaderboards and dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
         local allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
         if #allLeaderboards > 1 and not rotationActive then
-          debugPrint("Setting up INITIAL rotation timer for " .. #allLeaderboards .. " leaderboards (after visible)")
           rotationActive = true
           -- Use a separate timer instead of sleep on the main ActorFrame
           self:GetChild("RotationTimer"):playcommand("StartTimer")
-        else
-          debugPrint("Skipping rotation setup - rotationActive: " ..
-          tostring(rotationActive) .. ", leaderboards: " .. #allLeaderboards)
         end
       end
     end,
 
     ApplyDialogContentCommand = function(self)
-      debugPrint("=== ApplyDialogContentCommand called ===")
-      debugPrint("Self exists: " .. tostring(self ~= nil))
-      debugPrint("dialogData exists: " .. tostring(dialogData ~= nil))
-      if dialogData then
-        debugPrint("dialogData.eventLeaderboards exists: " .. tostring(dialogData.eventLeaderboards ~= nil))
-        if dialogData.eventLeaderboards then
-          debugPrint("Number of events: " .. #dialogData.eventLeaderboards)
-        end
-      end
       applyContent()
     end,
 
     -- Handle leaderboard rotation
     RotateLeaderboardCommand = function(self)
-      debugPrint("=== RotateLeaderboardCommand triggered ===")
       rotateToNextLeaderboard()
     end,
 
     HideCommand = function(self)
-      debugPrint("=== HideCommand called ===")
       rotationActive = false -- reset rotation state
       isRotating = false     -- reset rotation guard
       local topscreen = SCREENMAN and SCREENMAN:GetTopScreen() or nil
-      if topscreen then
-        topscreen:RemoveInputCallback(InputHandler)
+      if topscreen and inputHandler then
+        topscreen:RemoveInputCallback(inputHandler)
         for player in ivalues(PlayerNumber) do
           SCREENMAN:set_input_redirected(player, false)
         end
@@ -1229,6 +1212,9 @@ local function createACDialogActor(name)
 
     AfterHideCommand = function(self)
       self:visible(false)
+      -- Clear dialog data when fully hidden to prevent persistence
+      dialogData = nil
+      currentLeaderboardIndex = 1
     end,
 
     -- sfx (re-use prompt sound)
@@ -1612,6 +1598,13 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   ModuleCommand = function(self)
     -- reset dialog visibility guard on each screen entry
     self.dialogShown = false
+    
+    -- Reset dialog state to prevent persistence from previous visits
+    local dialog = self:GetChild("ACDialog")
+    if dialog then
+      dialog:playcommand("ResetDialogState")
+    end
+    
     -- Clear previous texts
     local p1Text = self:GetChild("ACSubmitP1")
     local p2Text = self:GetChild("ACSubmitP2")
@@ -1648,17 +1641,10 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   end,
 
   ArrowCloudSubmitResultMessageCommand = function(self, params)
-    debugPrint("=== ArrowCloudSubmitResultMessageCommand (ScreenEvaluationStage) ===")
     if not params or not params.player then
-      debugPrint("No params or player provided")
       return
     end
     local pn = params.player
-    debugPrint("Player: " .. pn .. ", ok: " .. tostring(params.ok))
-    debugPrint("Has responseData: " .. tostring(params.responseData ~= nil))
-    if params.responseData then
-      debugPrint("ResponseData has eventLeaderboards: " .. tostring(params.responseData.eventLeaderboards ~= nil))
-    end
 
     local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
     if not label then return end
@@ -1668,17 +1654,19 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     end
     -- Show dialog only if we have valid response data with eventLeaderboards
     if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards then
-      debugPrint("Showing dialog with responseData")
       self.dialogShown = true
       local dialog = self:GetChild("ACDialog")
       if dialog then
         dialog:playcommand("ShowDialog", { responseData = params.responseData })
-      else
-        debugPrint("No ACDialog found!")
       end
-    else
-      debugPrint("Not showing dialog - dialogShown: " ..
-      tostring(self.dialogShown) .. ", hasResponseData: " .. tostring(params.responseData ~= nil))
+    end
+  end,
+
+  -- Clean up dialog state when leaving the screen
+  OffCommand = function(self)
+    local dialog = self:GetChild("ACDialog")
+    if dialog then
+      dialog:playcommand("ResetDialogState")
     end
   end,
 
@@ -1709,6 +1697,13 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
   ModuleCommand = function(self)
     -- reset dialog visibility guard on each screen entry
     self.dialogShown = false
+    
+    -- Reset dialog state to prevent persistence from previous visits
+    local dialog = self:GetChild("ACDialog")
+    if dialog then
+      dialog:playcommand("ResetDialogState")
+    end
+    
     local fixed = GAMESTATE:GetCurrentCourse():AllSongsAreFixed()
     local autogen = GAMESTATE:GetCurrentCourse():IsAutogen()
     local endless = GAMESTATE:GetCurrentCourse():IsEndless()
@@ -1771,6 +1766,14 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       if dialog then
         dialog:playcommand("ShowDialog", { responseData = params.responseData })
       end
+    end
+  end,
+
+  -- Clean up dialog state when leaving the screen
+  OffCommand = function(self)
+    local dialog = self:GetChild("ACDialog")
+    if dialog then
+      dialog:playcommand("ResetDialogState")
     end
   end,
 
