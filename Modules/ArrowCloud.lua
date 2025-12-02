@@ -1736,7 +1736,9 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       self.waiting[pn] = false
     end
     -- Show dialog only if we have valid response data with eventLeaderboards
-    if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards then
+    -- Skip dialog in versus mode (two players) since each gets separate responses
+    local players = GAMESTATE:GetHumanPlayers()
+    if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards and #players == 1 then
       self.dialogShown = true
       local dialog = self:GetChild("ACDialog")
       if dialog then
@@ -1859,7 +1861,9 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       self.waiting[pn] = false
     end
     -- Show dialog only if we have valid response data with eventLeaderboards
-    if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards then
+    -- Skip dialog in versus mode (two players) since each gets separate responses
+    local players = GAMESTATE:GetHumanPlayers()
+    if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards and #players == 1 then
       self.dialogShown = true
       local dialog = self:GetChild("ACDialog")
       if dialog then
