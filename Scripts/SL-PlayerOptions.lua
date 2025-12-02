@@ -478,7 +478,7 @@ local Overrides = {
 			mods.ShowFaPlusPane = list[4]
 			mods.SmallerWhite = list[5]
 			-- Default to FA+ pane if either options are active.
-			sl_pn.EvalPanePrimary = ((list[1] or list[2]) and list[3]) and 2 or 1
+			sl_pn.EvalPanePrimary = ((list[1] or list[2]) and list[4]) and 2 or 1
 		end
 	},
 	-------------------------------------------------------------------------
