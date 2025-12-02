@@ -1349,7 +1349,7 @@ local function createACDialogActor(name)
       },
 
       -- header text (BLUE SHIFT) centered along the top
-      LoadFont(ThemePrefs.Get("ThemeFont") .. " Header") .. {
+      LoadFont("Common" .. " Header") .. {
         Name = "LogoText",
         InitCommand = function(self)
           local w, h = ACDialogSize()
@@ -1363,7 +1363,7 @@ local function createACDialogActor(name)
       },
 
       -- centered freeform text under the header logo
-      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+      LoadFont("Common" .. " Normal") .. {
         Name = "Freeform",
         InitCommand = function(self)
           local w, h = ACDialogSize()
@@ -1377,7 +1377,7 @@ local function createACDialogActor(name)
       },
 
       -- leaderboard mode label (from API response)
-      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+      LoadFont("Common" .. " Normal") .. {
         Name = "ModeLabel",
         InitCommand = function(self)
           local w, h = ACDialogSize()
@@ -1476,21 +1476,21 @@ local function createACDialogActor(name)
         -- Row helper: four columns (rank, name, score, delta)
         Def.ActorFrame { Name = "Row2",
           InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 0) end,
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             local w = ACDialogSize()
             local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
               "")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize()
             local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize()
             local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
@@ -1499,18 +1499,18 @@ local function createACDialogActor(name)
         },
         Def.ActorFrame { Name = "Row3",
           InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 1) end,
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
               "")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
               1, 1):settext("")
@@ -1518,18 +1518,18 @@ local function createACDialogActor(name)
         },
         Def.ActorFrame { Name = "Row4",
           InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 2) end,
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
               "")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
               1, 1):settext("")
@@ -1537,18 +1537,18 @@ local function createACDialogActor(name)
         },
         Def.ActorFrame { Name = "Row5",
           InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 3) end,
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
               "")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
               1, 1):settext("")
@@ -1556,18 +1556,18 @@ local function createACDialogActor(name)
         },
         Def.ActorFrame { Name = "Row6",
           InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 4) end,
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
               "")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
               1, 1):settext("")
@@ -1575,18 +1575,18 @@ local function createACDialogActor(name)
         },
         Def.ActorFrame { Name = "Row7",
           InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 5) end,
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
               "")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
               1, 1):settext("")
@@ -1594,18 +1594,18 @@ local function createACDialogActor(name)
         },
         Def.ActorFrame { Name = "Row8",
           InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 6) end,
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
               "")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
               1, 1):settext("")
@@ -1613,18 +1613,18 @@ local function createACDialogActor(name)
         },
         Def.ActorFrame { Name = "Row9",
           InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 7) end,
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Rank", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Alias", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
             self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
               "")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Score", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
           end },
-          LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. { Name = "Delta", InitCommand = function(self)
+          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
             local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
             self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
               1, 1):settext("")
