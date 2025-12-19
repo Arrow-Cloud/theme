@@ -93,6 +93,13 @@ if not GetWorstJudgment then GetWorstJudgment = function(...) return 0 end end
 if not BinaryToHex then BinaryToHex = function(...) return "" end end
 if not clamp then clamp = function(v, min, max) if v < min then return min elseif v > max then return max else return v end end end
 if not Trace then Trace = function(...) end end
+if not GetTimeSinceStart then GetTimeSinceStart = function() return 0 end end
+if not Year then Year = function() return 2024 end end
+if not MonthOfYear then MonthOfYear = function() return 0 end end
+if not DayOfMonth then DayOfMonth = function() return 1 end end
+if not Hour then Hour = function() return 0 end end
+if not Minute then Minute = function() return 0 end end
+if not Second then Second = function() return 0 end end
 if not ToEnumShortString then
   ToEnumShortString = function(v, ...)
     if v == PLAYER_1 then
@@ -114,7 +121,9 @@ if not ivalues then
     end
   end
 end
-if not FILEMAN then FILEMAN = { DoesFileExist = function(...) return false end } end
+if not FILEMAN then FILEMAN = { DoesFileExist = function(...) return false end, GetDirListing = function(...) return {} end, Remove = function(...) return true end } end
+if not RageFileUtil then RageFileUtil = { CreateRageFile = function() return { Open = function(...) return false end, Write = function(...) end, Read = function(...) return "" end, Close = function(...) end, destroy = function(...) end } end } end
+if not JsonDecode then JsonDecode = function(...) return {} end end
 if not MESSAGEMAN then MESSAGEMAN = { Broadcast = function(...) end } end
 -- Screen dimensions (tooling stub only)
 if not _screen then _screen = { w = 640, h = 480, cx = 320, cy = 240 } end
@@ -133,6 +142,177 @@ if not SCREENMAN then
     set_input_redirected = function(...) end
   }
 end
+
+-- -------------------------------------------------------------------------------------------------
+-- Pending score storage for offline retry
+-- When a score submission fails due to being offline, we save the payload to disk
+-- and retry it the next time the player reaches an evaluation screen while online.
+
+local function getPendingScoresDir(player)
+  if not player then return nil end
+  local playerIndex = (player == PLAYER_1) and 0 or 1
+  local profileDir = PROFILEMAN:GetProfileDir(playerIndex)
+  if not profileDir or profileDir == "" then
+    return nil
+  end
+  return profileDir .. "ArrowCloudPending/"
+end
+
+local function ensurePendingScoresDir(player)
+  local dir = getPendingScoresDir(player)
+  if not dir then return false end
+  -- Directory will be created automatically when we write the first file
+  return true
+end
+
+-- Forward declaration - will be defined after encodeJson
+local savePendingScore
+
+-- Load all pending score files
+-- Returns array of { filename, data, hash }
+local function loadPendingScores(player)
+  local dir = getPendingScoresDir(player)
+  if not dir or not FILEMAN:DoesFileExist(dir) then
+    return {}
+  end
+  
+  local files = FILEMAN:GetDirListing(dir)
+  local pendingScores = {}
+  
+  for _, filename in ipairs(files) do
+    if filename:match("%.json$") then
+      -- Skip if there's a .completed marker for this file
+      local completedMarker = dir .. filename .. ".completed"
+      local cleanedMarker = dir .. filename .. ".cleaned"
+      if not FILEMAN:DoesFileExist(completedMarker) and not FILEMAN:DoesFileExist(cleanedMarker) then
+        local filepath = dir .. filename
+        local file = RageFileUtil.CreateRageFile()
+      
+        if file:Open(filepath, 1) then -- mode 1 = read
+          local content = file:Read()
+          file:Close()
+          file:destroy()
+          
+          -- Extract hash from filename: {timestamp}_{hash}.json
+          local hash = filename:match("_%w+%.json$")
+          if hash then
+            hash = hash:sub(2, -6) -- remove leading _ and .json
+          end
+          
+          -- For now, store raw JSON string; we'll pass it directly to HTTP
+          table.insert(pendingScores, {
+            filename = filename,
+            filepath = filepath,
+            data = content,
+            hash = hash
+          })
+        else
+          file:destroy()
+        end
+      end
+    end
+  end
+  
+  return pendingScores
+end
+
+-- Mark a pending score as completed after successful submission
+-- Since FILEMAN:Remove() is not available, we rename the file with .completed suffix
+local function deletePendingScore(player, filename)
+  local dir = getPendingScoresDir(player)
+  if not dir then return false end
+  
+  local filepath = dir .. filename
+  local completedPath = dir .. filename .. ".completed"
+  
+  -- Create a marker file to indicate completion
+  local file = RageFileUtil.CreateRageFile()
+  if file:Open(completedPath, 2) then
+    file:Write("completed")
+    file:Close()
+    file:destroy()
+    debugPrint("Marked pending score as completed: " .. filename)
+    return true
+  else
+    file:destroy()
+    return false
+  end
+end
+
+-- Count pending score files
+local function countPendingScores(player)
+  local dir = getPendingScoresDir(player)
+  if not dir or not FILEMAN:DoesFileExist(dir) then
+    return 0
+  end
+  
+  local files = FILEMAN:GetDirListing(dir)
+  local count = 0
+  
+  for _, filename in ipairs(files) do
+    if filename:match("%.json$") then
+      -- Skip if there's a .completed or .cleaned marker for this file
+      local completedMarker = dir .. filename .. ".completed"
+      local cleanedMarker = dir .. filename .. ".cleaned"
+      if not FILEMAN:DoesFileExist(completedMarker) and not FILEMAN:DoesFileExist(cleanedMarker) then
+        count = count + 1
+      end
+    end
+  end
+  
+  return count
+end
+
+-- Clean up old pending scores (older than 30 days)
+local function cleanupOldPendingScores(player)
+  local dir = getPendingScoresDir(player)
+  if not dir or not FILEMAN:DoesFileExist(dir) then
+    return
+  end
+  
+  local files = FILEMAN:GetDirListing(dir)
+  
+  -- Calculate current date as YYYYMMDD number for comparison
+  local currentYear = Year()
+  local currentMonth = MonthOfYear() + 1
+  local currentDay = DayOfMonth()
+  local currentDate = currentYear * 10000 + currentMonth * 100 + currentDay
+  
+  for _, filename in ipairs(files) do
+    if filename:match("%.json$") then
+      -- Extract date from timestamp: YYYYMMDDHHMMSSmmm
+      local timestampStr = filename:match("^%d+")
+      if timestampStr and #timestampStr >= 8 then
+        local fileYear = tonumber(timestampStr:sub(1, 4))
+        local fileMonth = tonumber(timestampStr:sub(5, 6))
+        local fileDay = tonumber(timestampStr:sub(7, 8))
+        local fileDate = fileYear * 10000 + fileMonth * 100 + fileDay
+        
+        -- Simple day difference calculation (approximate)
+        local daysDiff = currentDate - fileDate
+        
+        -- Mark old files as cleaned by creating a .cleaned marker
+        -- (We can't actually delete files since FILEMAN:Remove is not available)
+        if daysDiff > 30 then
+          local cleanedMarker = dir .. filename .. ".cleaned"
+          if not FILEMAN:DoesFileExist(cleanedMarker) then
+            local file = RageFileUtil.CreateRageFile()
+            if file:Open(cleanedMarker, 2) then
+              file:Write("cleaned")
+              file:Close()
+              file:destroy()
+              debugPrint("Marked old pending score for cleanup: " .. filename)
+            else
+              file:destroy()
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+-- -------------------------------------------------------------------------------------------------
 
 -- Centralized sizing helpers for the Arrow Cloud dialog overlay
 local function ACDialogSize()
@@ -408,8 +588,44 @@ local function encodeJson(value)
   return encodeJsonValue(value)
 end
 
+-- Save a failed score submission for later retry
+-- Filename format: {timestamp}_{hash}.json where timestamp is YYYYMMDDHHMMSSmmm
+savePendingScore = function(player, data, hash)
+  if not ensurePendingScoresDir(player) then
+    debugPrint("Could not create pending scores directory")
+    return false
+  end
+  
+  -- Create timestamp from year/month/day/hour/minute/second/millisecond
+  local year = Year()
+  local month = MonthOfYear() + 1
+  local day = DayOfMonth()
+  local hour = Hour()
+  local minute = Minute()
+  local second = Second()
+  local millisecond = math.floor((GetTimeSinceStart() % 1) * 1000)
+  local timestamp = string.format("%04d%02d%02d%02d%02d%02d%03d", year, month, day, hour, minute, second, millisecond)
+  local filename = string.format("%s_%s.json", timestamp, hash)
+  local filepath = getPendingScoresDir(player) .. filename
+  
+  local jsonBody = encodeJson(data)
+  local file = RageFileUtil.CreateRageFile()
+  
+  if file:Open(filepath, 2) then -- mode 2 = write
+    file:Write(jsonBody)
+    file:Close()
+    file:destroy()
+    debugPrint("Saved pending score: " .. filename)
+    return true
+  else
+    file:destroy()
+    debugPrint("Failed to save pending score: " .. filename)
+    return false
+  end
+end
+
 -- HTTP communication
-local function sendScoreData(data, apiKey, hash, player)
+local function sendScoreData(data, apiKey, hash, player, isSilent, onComplete)
   local url = BASE_URL .. "/v1/chart/" .. hash .. "/play"
 
   local jsonBody = encodeJson(data)
@@ -441,6 +657,11 @@ local function sendScoreData(data, apiKey, hash, player)
           responseData = parseArrowCloudResponse(body)
         end
 
+        -- If submission failed due to being offline, save for retry
+        if not ok and status == 0 then
+          savePendingScore(player, data, hash)
+        end
+
         -- Truncate body for logging after we've tried to parse it
         if #body > 256 then body = body:sub(1, 256) .. "…" end
       else
@@ -453,17 +674,87 @@ local function sendScoreData(data, apiKey, hash, player)
         debugPrint("ArrowCloud submit failed: status=" .. tostring(status) .. (err and (" error=" .. err) or ""))
       end
 
-      -- Notify UI listeners on evaluation screens.
-      local pn = player and ToEnumShortString(player) or nil
-      MESSAGEMAN:Broadcast("ArrowCloudSubmitResult", {
-        ok = ok,
-        player = pn,
-        status = status,
-        error = err,
-        responseData = responseData
-      })
+      -- Notify UI listeners on evaluation screens (unless silent)
+      if not isSilent then
+        local pn = player and ToEnumShortString(player) or nil
+        MESSAGEMAN:Broadcast("ArrowCloudSubmitResult", {
+          ok = ok,
+          player = pn,
+          status = status,
+          error = err,
+          responseData = responseData
+        })
+      end
+
+      -- Call completion callback if provided
+      if onComplete then
+        onComplete(ok, status)
+      end
     end
   }
+end
+
+-- Retry pending scores from previous sessions
+local function retryPendingScores(player, callback)
+  local pendingScores = loadPendingScores(player)
+  
+  if #pendingScores == 0 then
+    if callback then callback(0, true) end
+    return
+  end
+  
+  debugPrint("Retrying " .. #pendingScores .. " pending score(s)")
+  
+  local successCount = 0
+  local remaining = #pendingScores
+  
+  for _, pending in ipairs(pendingScores) do
+    -- Read API key from player profile for retry attempts
+    local config = readApiKey(player)
+    if config and config.apiKey and config.apiKey ~= "" then
+      -- Send the raw JSON directly
+      local url = BASE_URL .. "/v1/chart/" .. pending.hash .. "/play"
+      
+      NETWORK:HttpRequest {
+        url = url,
+        method = "POST",
+        body = pending.data,
+        headers = {
+          ["Content-Type"] = "application/json",
+          ["Authorization"] = "Bearer " .. config.apiKey
+        },
+        onResponse = function(response)
+          local ok = false
+          local status = nil
+          
+          if type(response) == "table" then
+            status = response.statusCode
+            ok = (status ~= nil and status >= 200 and status < 300)
+          end
+          
+          if ok then
+            deletePendingScore(player, pending.filename)
+            successCount = successCount + 1
+            debugPrint("Successfully retried pending score: " .. pending.filename)
+          else
+            debugPrint("Retry failed for: " .. pending.filename .. " (status: " .. tostring(status) .. ")")
+          end
+          
+          remaining = remaining - 1
+          local isComplete = (remaining == 0)
+          if callback then
+            callback(successCount, isComplete)
+          end
+        end
+      }
+    else
+      remaining = remaining - 1
+      local isComplete = (remaining == 0)
+      if callback then
+        callback(successCount, isComplete)
+      end
+    end
+  end
 end
 
 -- Game data collection functions
@@ -1669,10 +1960,14 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     local p2Text = self:GetChild("ACSubmitP2")
     local p1ErrMsg = self:GetChild("ACErrorP1")
     local p2ErrMsg = self:GetChild("ACErrorP2")
+    local p1Pending = self:GetChild("ACPendingP1")
+    local p2Pending = self:GetChild("ACPendingP2")
     if p1Text then p1Text:settext("") end
     if p2Text then p2Text:settext("") end
     if p1ErrMsg then p1ErrMsg:settext("") end
     if p2ErrMsg then p2ErrMsg:settext("") end
+    if p1Pending then p1Pending:settext("") end
+    if p2Pending then p2Pending:settext("") end
     self.waiting = { P1 = false, P2 = false }
 
     local style = GAMESTATE:GetCurrentStyle():GetName()
@@ -1684,6 +1979,18 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     for _, player in ipairs(players) do
       local pn = ToEnumShortString(player)
       local label = (pn == "P1") and p1Text or p2Text
+      local pendingLabel = (pn == "P1") and p1Pending or p2Pending
+      
+      -- Clean up old pending scores for this player
+      cleanupOldPendingScores(player)
+      
+      -- Show initial pending count for this player
+      local pendingCount = countPendingScores(player)
+      if pendingCount > 0 and pendingLabel then
+        local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+        pendingLabel:settext(pendingText)
+      end
+      
       local profileCfg = readApiKey(player)
       local eligibility = ArrowCloud.isEligible(player, { allowAutoplay = profileCfg.allowAutoplay })
       local apiKey = profileCfg.apiKey
@@ -1710,6 +2017,39 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
         end
       end
     end
+
+    -- After normal submissions, retry pending scores
+    self:sleep(1):queuecommand("RetryPending")
+  end,
+
+  RetryPendingCommand = function(self)
+    local p1Pending = self:GetChild("ACPendingP1")
+    local p2Pending = self:GetChild("ACPendingP2")
+    
+    local players = GAMESTATE:GetHumanPlayers()
+    for _, player in ipairs(players) do
+      local pn = ToEnumShortString(player)
+      local pendingLabel = (pn == "P1") and p1Pending or p2Pending
+      
+      retryPendingScores(player, function(successCount, isComplete)
+        local remainingCount = countPendingScores(player)
+        
+        if remainingCount == 0 and successCount > 0 then
+          -- All scores submitted successfully
+          if pendingLabel then
+            pendingLabel:settext("✔ All scores submitted")
+            pendingLabel:diffusecolor({ 0.2, 1, 0.2, 1 }) -- Green
+            if isComplete then
+              pendingLabel:sleep(3):smooth(0.5):diffusealpha(0)
+            end
+          end
+        elseif remainingCount > 0 then
+          -- Update count after each score is processed
+          local pendingText = remainingCount .. " pending score" .. (remainingCount == 1 and "" or "s")
+          if pendingLabel then pendingLabel:settext(pendingText) end
+        end
+      end)
+    end
   end,
 
   ArrowCloudSubmitResultMessageCommand = function(self, params)
@@ -1720,6 +2060,7 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
 
     local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
     local errLabel = self:GetChild(pn == "P1" and "ACErrorP1" or "ACErrorP2")
+    local pendingLabel = self:GetChild(pn == "P1" and "ACPendingP1" or "ACPendingP2")
 
     if not label then return end
     if self.waiting[pn] then
@@ -1729,6 +2070,13 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
         errLabel:settext("Status: 401. Check your API key.")
       elseif not params.ok and params.status == 0 then
         errLabel:settext("You are offline.")
+        -- Show pending count immediately
+        local player = (pn == "P1") and PLAYER_1 or PLAYER_2
+        local pendingCount = countPendingScores(player)
+        if pendingCount > 0 and pendingLabel then
+          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+          pendingLabel:settext(pendingText)
+        end
       elseif not params.ok then
         errLabel:settext("Status: " .. tostring(params.status) .. ". " .. (params.message or "Unknown error."))
       end
@@ -1785,6 +2133,22 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       self:diffusecolor({ 1, 1, 1, 1 })
     end
   },
+  LoadFont("Common Normal") .. {
+    Name = "ACPendingP1",
+    InitCommand = function(self)
+      self:xy(10, _screen.h - 80):zoom(0.5):halign(0)
+      self:settext("")
+      self:diffusecolor({ 1, 0.8, 0.2, 1 }) -- Yellow/orange for pending
+    end
+  },
+  LoadFont("Common Normal") .. {
+    Name = "ACPendingP2",
+    InitCommand = function(self)
+      self:xy(_screen.w - 10, _screen.h - 80):zoom(0.5):halign(1)
+      self:settext("")
+      self:diffusecolor({ 1, 0.8, 0.2, 1 }) -- Yellow/orange for pending
+    end
+  },
 
   -- dialog overlay used after submission
   createACDialogActor("ACDialog")
@@ -1805,16 +2169,25 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       dialog:playcommand("ResetDialogState")
     end
 
+    local p1Text = self:GetChild("ACSubmitP1")
+    local p2Text = self:GetChild("ACSubmitP2")
+    local p1ErrMsg = self:GetChild("ACErrorP1")
+    local p2ErrMsg = self:GetChild("ACErrorP2")
+    local p1Pending = self:GetChild("ACPendingP1")
+    local p2Pending = self:GetChild("ACPendingP2")
+    if p1Text then p1Text:settext("") end
+    if p2Text then p2Text:settext("") end
+    if p1ErrMsg then p1ErrMsg:settext("") end
+    if p2ErrMsg then p2ErrMsg:settext("") end
+    if p1Pending then p1Pending:settext("") end
+    if p2Pending then p2Pending:settext("") end
+
     local fixed = GAMESTATE:GetCurrentCourse():AllSongsAreFixed()
     local autogen = GAMESTATE:GetCurrentCourse():IsAutogen()
     local endless = GAMESTATE:GetCurrentCourse():IsEndless()
 
     -- Only process fixed, non-autogen, non-endless courses
     if fixed and not autogen and not endless then
-      local p1Text = self:GetChild("ACSubmitP1")
-      local p2Text = self:GetChild("ACSubmitP2")
-      if p1Text then p1Text:settext("") end
-      if p2Text then p2Text:settext("") end
       self.waiting = { P1 = false, P2 = false }
 
       local style = GAMESTATE:GetCurrentStyle():GetName()
@@ -1824,6 +2197,19 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
 
       local players = GAMESTATE:GetHumanPlayers()
       for _, player in ipairs(players) do
+        local pn = ToEnumShortString(player)
+        local pendingLabel = (pn == "P1") and p1Pending or p2Pending
+        
+        -- Clean up old pending scores for this player
+        cleanupOldPendingScores(player)
+        
+        -- Show initial pending count for this player
+        local pendingCount = countPendingScores(player)
+        if pendingCount > 0 and pendingLabel then
+          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+          pendingLabel:settext(pendingText)
+        end
+        
         local profileCfg = readApiKey(player)
         -- Ignore the course restriction for nonstop; reuse other checks.
         local eligibility = ArrowCloud.isEligible(player,
@@ -1843,11 +2229,51 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
           local pn = ToEnumShortString(player)
           local label = (pn == "P1") and p1Text or p2Text
           if label then label:settext("❌ Arrow Cloud") end
+          if apiKey == nil or apiKey == "" then
+            debugPrint("No API key configured for " .. pn)
+            local errLabel = (pn == "P1") and p1ErrMsg or p2ErrMsg
+            if errLabel then
+              errLabel:settext("Arrow Cloud API key not configured.")
+            end
+          end
           if apiKey ~= nil and not eligibility.ok then
             debugPrint("Skipping course submission (ineligible)")
           end
         end
       end
+    end
+
+    -- After normal submissions, retry pending scores
+    self:sleep(1):queuecommand("RetryPending")
+  end,
+
+  RetryPendingCommand = function(self)
+    local p1Pending = self:GetChild("ACPendingP1")
+    local p2Pending = self:GetChild("ACPendingP2")
+    
+    local players = GAMESTATE:GetHumanPlayers()
+    for _, player in ipairs(players) do
+      local pn = ToEnumShortString(player)
+      local pendingLabel = (pn == "P1") and p1Pending or p2Pending
+      
+      retryPendingScores(player, function(successCount, isComplete)
+        local remainingCount = countPendingScores(player)
+        
+        if remainingCount == 0 and successCount > 0 then
+          -- All scores submitted successfully
+          if pendingLabel then
+            pendingLabel:settext("✅ All scores submitted")
+            pendingLabel:diffusecolor({ 0.2, 1, 0.2, 1 }) -- Green
+            if isComplete then
+              pendingLabel:sleep(3):smooth(0.5):diffusealpha(0)
+            end
+          end
+        elseif remainingCount > 0 then
+          -- Update count after each score is processed
+          local pendingText = remainingCount .. " pending score" .. (remainingCount == 1 and "" or "s")
+          if pendingLabel then pendingLabel:settext(pendingText) end
+        end
+      end)
     end
   end,
 
@@ -1855,9 +2281,27 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
     if not params or not params.player then return end
     local pn = params.player
     local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
+    local errLabel = self:GetChild(pn == "P1" and "ACErrorP1" or "ACErrorP2")
+    local pendingLabel = self:GetChild(pn == "P1" and "ACPendingP1" or "ACPendingP2")
     if not label then return end
     if self.waiting[pn] then
       label:settext(params.ok and "✔ Arrow Cloud" or "❌ Arrow Cloud")
+
+      if not params.ok and params.status == 401 then
+        if errLabel then errLabel:settext("Status: 401. Check your API key.") end
+      elseif not params.ok and params.status == 0 then
+        if errLabel then errLabel:settext("You are offline.") end
+        -- Show pending count immediately
+        local player = (pn == "P1") and PLAYER_1 or PLAYER_2
+        local pendingCount = countPendingScores(player)
+        if pendingCount > 0 and pendingLabel then
+          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+          pendingLabel:settext(pendingText)
+        end
+      elseif not params.ok then
+        if errLabel then errLabel:settext("Status: " .. tostring(params.status) .. ". " .. (params.message or "Unknown error.")) end
+      end
+
       self.waiting[pn] = false
     end
     -- Show dialog only if we have valid response data with eventLeaderboards
@@ -1892,6 +2336,38 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
     InitCommand = function(self)
       self:xy(_screen.w - 10, _screen.h - 48):zoom(0.6):halign(1)
       self:settext("")
+    end
+  },
+  LoadFont("Common Normal") .. {
+    Name = "ACErrorP1",
+    InitCommand = function(self)
+      self:xy(10, _screen.h - 64):zoom(0.5):halign(0)
+      self:settext("")
+      self:diffusecolor({ 1, 1, 1, 1 })
+    end
+  },
+  LoadFont("Common Normal") .. {
+    Name = "ACErrorP2",
+    InitCommand = function(self)
+      self:xy(_screen.w - 10, _screen.h - 64):zoom(0.5):halign(1)
+      self:settext("")
+      self:diffusecolor({ 1, 1, 1, 1 })
+    end
+  },
+  LoadFont("Common Normal") .. {
+    Name = "ACPendingP1",
+    InitCommand = function(self)
+      self:xy(10, _screen.h - 80):zoom(0.5):halign(0)
+      self:settext("")
+      self:diffusecolor({ 1, 0.8, 0.2, 1 }) -- Yellow/orange for pending
+    end
+  },
+  LoadFont("Common Normal") .. {
+    Name = "ACPendingP2",
+    InitCommand = function(self)
+      self:xy(_screen.w - 10, _screen.h - 80):zoom(0.5):halign(1)
+      self:settext("")
+      self:diffusecolor({ 1, 0.8, 0.2, 1 }) -- Yellow/orange for pending
     end
   },
 
