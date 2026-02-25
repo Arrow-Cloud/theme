@@ -86,6 +86,9 @@ local af = Def.ActorFrame{
 	-- This is only added in "dance" mode and if the service is available.
 	LoadActor("./Leaderboard.lua"),
 
+	-- The Arrow Cloud leaderboard (accessed from SortMenu)
+	LoadActor("./ACLeaderboard.lua"),
+
 	-- a yes/no prompt overlay for backing out of SelectMusic when in EventMode can be
 	-- activated via "CodeEscapeFromEventMode" under [ScreenSelectMusic] in Metrics.ini
 	LoadActor("./EscapeFromEventMode.lua"),

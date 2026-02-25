@@ -349,6 +349,7 @@ local af = Def.ActorFrame{
 	},
 	RequestResponseActor(17, 50)..{
 		SendLeaderboardRequestCommand=function(self)
+      SM("SendLeaderboardRequest")
 			-- If a player does not have an API key or chart hash just show the local leaderboard.
 			for i=1,2 do
 				local pn = "P"..i
@@ -380,6 +381,16 @@ local af = Def.ActorFrame{
 						SetLeaderboardForPlayer(i, leaderboard, leaderboardList[1], false)
 					end
 				end
+				-- Still attempt ArrowCloud logging (hash may exist) even if GrooveStats disabled.
+				local hash = ""
+				if SL.P1 and SL.P1.Streams and SL.P1.Streams.Hash ~= "" then
+					hash = SL.P1.Streams.Hash
+				elseif SL.P2 and SL.P2.Streams and SL.P2.Streams.Hash ~= "" then
+					hash = SL.P2.Streams.Hash
+				end
+				if hash ~= "" and ArrowCloudRequest then
+					ArrowCloudRequest(hash)
+				end
 				return
 			end
 
@@ -408,6 +419,17 @@ local af = Def.ActorFrame{
 					callback=LeaderboardRequestProcessor,
 					args=SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("LeaderboardMaster"),
 				})
+			end
+
+			-- ArrowCloud parallel logging request
+			local hash = ""
+			if SL.P1 and SL.P1.Streams and SL.P1.Streams.Hash ~= "" then
+				hash = SL.P1.Streams.Hash
+			elseif SL.P2 and SL.P2.Streams and SL.P2.Streams.Hash ~= "" then
+				hash = SL.P2.Streams.Hash
+			end
+			if hash ~= "" and ArrowCloudRequest then
+				ArrowCloudRequest(hash)
 			end
 		end
 	}

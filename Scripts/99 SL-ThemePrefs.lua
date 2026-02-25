@@ -116,7 +116,7 @@ SL_CustomPrefs.Get = function()
 			Values	= { true, false }
 		},
 		KeyboardFeatures = {
-			Default = false,
+			Default = true,
 			Choices =  { THEME:GetString("ThemePrefs","Yes"), THEME:GetString("ThemePrefs", "No") },
 			Values	= { true, false }
 		},
@@ -222,7 +222,7 @@ SL_CustomPrefs.Get = function()
 		-- Enable/Disable Certain Screens
 		AllowScreenSelectProfile =
 		{
-			Default = false,
+			Default = true,
 			Choices = { THEME:GetString("ThemePrefs","Yes"), THEME:GetString("ThemePrefs", "No") },
 			Values  = { true, false }
 		},
@@ -313,19 +313,19 @@ SL_CustomPrefs.Get = function()
 		},
 		-- - - - - - - - - - - - - - - - - - - -
 		EnableGrooveStats = {
-			Default = false,
+			Default = true,
 			Choices =  { THEME:GetString("ThemePrefs","Yes"), THEME:GetString("ThemePrefs", "No") },
 			Values  = { true, false }
 		},
 
 		AutoDownloadUnlocks = {
-			Default = false,
+			Default = true,
 			Choices =  { THEME:GetString("ThemePrefs","Yes"), THEME:GetString("ThemePrefs", "No") },
 			Values  = { true, false }
 		},
 
 		SeparateUnlocksByPlayer = {
-			Default = false,
+			Default = true,
 			Choices =  { THEME:GetString("ThemePrefs","Yes"), THEME:GetString("ThemePrefs", "No") },
 			Values  = { true, false }
 		},
@@ -397,6 +397,14 @@ SL_CustomPrefs.Get = function()
 		{
 			Default = false,
 			Choices = { THEME:GetString("ThemePrefs", "On"), THEME:GetString("ThemePrefs", "Off") },
+			Values = { true, false }
+		},
+
+		-- Arrow Cloud Options
+		HideGrooveStats =
+		{
+			Default = false,
+			Choices = { THEME:GetString("ThemePrefs", "Yes"), THEME:GetString("ThemePrefs", "No") },
 			Values = { true, false }
 		}
 	}
