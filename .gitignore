@@ -2,3 +2,4 @@
 Modules/Tinkering.lua
 .vscode/
 .github/copilot-instructions.md
+deploy.sh

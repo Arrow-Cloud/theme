@@ -9,8 +9,8 @@ local ArrowCloud = {}
 -- Constants
 local BASE_URL = "https://api.arrowcloud.dance"
 local MODULE_TAG = "[ArrowCloud-SLmodule]"
-local ENABLE_PENDING_SCORES = false -- Enable saving failed score submissions for retry when offline
-local ENABLE_AUTO_ROTATION = false  -- Enable automatic rotation of event leaderboards every 3 seconds
+local ENABLE_PENDING_SCORES = true -- Enable saving failed score submissions for retry when offline
+local MAX_PENDING_SCORES = 50      -- Maximum number of pending scores stored per player
 
 -- Dialog Layout Configuration
 --
@@ -147,171 +147,129 @@ end
 
 -- -------------------------------------------------------------------------------------------------
 -- Pending score storage for offline retry
--- When a score submission fails due to being offline, we save the payload to disk
--- and retry it the next time the player reaches an evaluation screen while online.
+-- All pending scores for a player are stored in a single JSONL file (one JSON object per line).
+-- Each line contains: {"hash":"...","data":{...}}
+-- On successful retry the line is removed; the file is capped at MAX_PENDING_SCORES entries.
 
-local function getPendingScoresDir(player)
+local function getPendingScoresPath(player)
   if not player then return nil end
   local playerIndex = (player == PLAYER_1) and 0 or 1
   local profileDir = PROFILEMAN:GetProfileDir(playerIndex)
   if not profileDir or profileDir == "" then
     return nil
   end
-  return profileDir .. "ArrowCloudPending/"
-end
-
-local function ensurePendingScoresDir(player)
-  local dir = getPendingScoresDir(player)
-  if not dir then return false end
-  -- Directory will be created automatically when we write the first file
-  return true
+  return profileDir .. "ArrowCloudPending.jsonl"
 end
 
 -- Forward declaration - will be defined after encodeJson
 local savePendingScore
 
--- Load all pending score files
--- Returns array of { filename, data, hash }
-local function loadPendingScores(player)
-  local dir = getPendingScoresDir(player)
-  if not dir or not FILEMAN:DoesFileExist(dir) then
+-- Read raw lines from the JSONL file, filtering out blanks.
+-- Returns an array of non-empty line strings.
+local function readPendingLines(player)
+  local path = getPendingScoresPath(player)
+  if not path or not FILEMAN:DoesFileExist(path) then
     return {}
   end
-  
-  local files = FILEMAN:GetDirListing(dir)
-  local pendingScores = {}
-  
-  for _, filename in ipairs(files) do
-    if filename:match("%.json$") then
-      -- Skip if there's a .completed marker for this file
-      local completedMarker = dir .. filename .. ".completed"
-      local cleanedMarker = dir .. filename .. ".cleaned"
-      if not FILEMAN:DoesFileExist(completedMarker) and not FILEMAN:DoesFileExist(cleanedMarker) then
-        local filepath = dir .. filename
-        local file = RageFileUtil.CreateRageFile()
-      
-        if file:Open(filepath, 1) then -- mode 1 = read
-          local content = file:Read()
-          file:Close()
-          file:destroy()
-          
-          -- Extract hash from filename: {timestamp}_{hash}.json
-          local hash = filename:match("_%w+%.json$")
-          if hash then
-            hash = hash:sub(2, -6) -- remove leading _ and .json
-          end
-          
-          -- For now, store raw JSON string; we'll pass it directly to HTTP
-          table.insert(pendingScores, {
-            filename = filename,
-            filepath = filepath,
-            data = content,
-            hash = hash
-          })
-        else
-          file:destroy()
-        end
-      end
+
+  local file = RageFileUtil.CreateRageFile()
+  if not file:Open(path, 1) then -- mode 1 = read
+    file:destroy()
+    return {}
+  end
+
+  local content = file:Read()
+  file:Close()
+  file:destroy()
+
+  if not content or content == "" then return {} end
+
+  local lines = {}
+  for line in content:gmatch("[^\n]+") do
+    if line ~= "" then
+      table.insert(lines, line)
     end
   end
-  
-  return pendingScores
+  return lines
 end
 
--- Mark a pending score as completed after successful submission
--- Since FILEMAN:Remove() is not available, we rename the file with .completed suffix
-local function deletePendingScore(player, filename)
-  local dir = getPendingScoresDir(player)
-  if not dir then return false end
-  
-  local filepath = dir .. filename
-  local completedPath = dir .. filename .. ".completed"
-  
-  -- Create a marker file to indicate completion
+-- Overwrite the JSONL file with the given array of line strings.
+local function writePendingLines(player, lines)
+  local path = getPendingScoresPath(player)
+  if not path then return false end
+
   local file = RageFileUtil.CreateRageFile()
-  if file:Open(completedPath, 2) then
-    file:Write("completed")
-    file:Close()
-    file:destroy()
-    debugPrint("Marked pending score as completed: " .. filename)
-    return true
-  else
+  if not file:Open(path, 2) then -- mode 2 = write
     file:destroy()
     return false
   end
+
+  file:Write(table.concat(lines, "\n") .. (#lines > 0 and "\n" or ""))
+  file:Close()
+  file:destroy()
+  return true
 end
 
--- Count pending score files
+-- Load all pending scores.
+-- Returns array of { lineIndex, data (raw JSON string), hash }
+local function loadPendingScores(player)
+  local lines = readPendingLines(player)
+  local pendingScores = {}
+
+  for i, line in ipairs(lines) do
+    -- Each line is a JSON wrapper: {"hash":"...","data":{...}}
+    local ok, decoded = pcall(JsonDecode, line)
+    if ok and type(decoded) == "table" and decoded.hash and decoded.data then
+      -- Re-encode the inner data so we can POST it directly
+      table.insert(pendingScores, {
+        lineIndex = i,
+        data = line,           -- keep the full line for the HTTP body reconstruction
+        innerData = decoded.data, -- decoded inner payload (table)
+        hash = decoded.hash,
+        pendingDate = decoded.pendingDate  -- ISO8601 timestamp of original play
+      })
+    else
+      debugPrint("Skipping malformed pending line " .. i)
+    end
+  end
+
+  return pendingScores
+end
+
+-- Remove a specific pending score by its line index and rewrite the file.
+local function removePendingScore(player, lineIndex)
+  local lines = readPendingLines(player)
+  if lineIndex < 1 or lineIndex > #lines then return false end
+  table.remove(lines, lineIndex)
+  return writePendingLines(player, lines)
+end
+
+-- Count pending scores (number of non-empty lines).
 local function countPendingScores(player)
-  local dir = getPendingScoresDir(player)
-  if not dir or not FILEMAN:DoesFileExist(dir) then
-    return 0
-  end
-  
-  local files = FILEMAN:GetDirListing(dir)
-  local count = 0
-  
-  for _, filename in ipairs(files) do
-    if filename:match("%.json$") then
-      -- Skip if there's a .completed or .cleaned marker for this file
-      local completedMarker = dir .. filename .. ".completed"
-      local cleanedMarker = dir .. filename .. ".cleaned"
-      if not FILEMAN:DoesFileExist(completedMarker) and not FILEMAN:DoesFileExist(cleanedMarker) then
-        count = count + 1
-      end
-    end
-  end
-  
-  return count
+  return #readPendingLines(player)
 end
 
--- Clean up old pending scores (older than 30 days)
-local function cleanupOldPendingScores(player)
-  local dir = getPendingScoresDir(player)
-  if not dir or not FILEMAN:DoesFileExist(dir) then
-    return
+-- Build an ISO 8601 timestamp from ITGMania's time globals (local time).
+local function getCurrentTimestamp()
+  return string.format("%04d-%02d-%02dT%02d:%02d:%02d",
+    Year(), MonthOfYear() + 1, DayOfMonth(), Hour(), Minute(), Second())
+end
+
+-- Format pending count text, appending "(FULL)" when at capacity.
+local function formatPendingText(count)
+  local text = count .. " pending score" .. (count == 1 and "" or "s")
+  if count >= MAX_PENDING_SCORES then
+    text = text .. " (FULL)"
   end
-  
-  local files = FILEMAN:GetDirListing(dir)
-  
-  -- Calculate current date as YYYYMMDD number for comparison
-  local currentYear = Year()
-  local currentMonth = MonthOfYear() + 1
-  local currentDay = DayOfMonth()
-  local currentDate = currentYear * 10000 + currentMonth * 100 + currentDay
-  
-  for _, filename in ipairs(files) do
-    if filename:match("%.json$") then
-      -- Extract date from timestamp: YYYYMMDDHHMMSSmmm
-      local timestampStr = filename:match("^%d+")
-      if timestampStr and #timestampStr >= 8 then
-        local fileYear = tonumber(timestampStr:sub(1, 4))
-        local fileMonth = tonumber(timestampStr:sub(5, 6))
-        local fileDay = tonumber(timestampStr:sub(7, 8))
-        local fileDate = fileYear * 10000 + fileMonth * 100 + fileDay
-        
-        -- Simple day difference calculation (approximate)
-        local daysDiff = currentDate - fileDate
-        
-        -- Mark old files as cleaned by creating a .cleaned marker
-        -- (We can't actually delete files since FILEMAN:Remove is not available)
-        if daysDiff > 30 then
-          local cleanedMarker = dir .. filename .. ".cleaned"
-          if not FILEMAN:DoesFileExist(cleanedMarker) then
-            local file = RageFileUtil.CreateRageFile()
-            if file:Open(cleanedMarker, 2) then
-              file:Write("cleaned")
-              file:Close()
-              file:destroy()
-              debugPrint("Marked old pending score for cleanup: " .. filename)
-            else
-              file:destroy()
-            end
-          end
-        end
-      end
-    end
+  return text
+end
+
+-- Return appropriate color for the pending label based on count.
+local function pendingLabelColor(count)
+  if count >= MAX_PENDING_SCORES then
+    return { 1, 0.3, 0.3, 1 } -- Red when full
   end
+  return { 1, 0.8, 0.2, 1 }   -- Yellow/orange
 end
 
 -- -------------------------------------------------------------------------------------------------
@@ -590,38 +548,33 @@ local function encodeJson(value)
   return encodeJsonValue(value)
 end
 
--- Save a failed score submission for later retry
--- Filename format: {timestamp}_{hash}.json where timestamp is YYYYMMDDHHMMSSmmm
+-- Save a failed score submission for later retry.
+-- Appends a single JSONL line: {"hash":"...","data":{...}}
+-- Returns true on success, false on failure, "full" if at cap.
 savePendingScore = function(player, data, hash)
-  if not ensurePendingScoresDir(player) then
-    debugPrint("Could not create pending scores directory")
+  local path = getPendingScoresPath(player)
+  if not path then
+    debugPrint("No profile path for pending score")
     return false
   end
-  
-  -- Create timestamp from year/month/day/hour/minute/second/millisecond
-  local year = Year()
-  local month = MonthOfYear() + 1
-  local day = DayOfMonth()
-  local hour = Hour()
-  local minute = Minute()
-  local second = Second()
-  local millisecond = math.floor((GetTimeSinceStart() % 1) * 1000)
-  local timestamp = string.format("%04d%02d%02d%02d%02d%02d%03d", year, month, day, hour, minute, second, millisecond)
-  local filename = string.format("%s_%s.json", timestamp, hash)
-  local filepath = getPendingScoresDir(player) .. filename
-  
-  local jsonBody = encodeJson(data)
-  local file = RageFileUtil.CreateRageFile()
-  
-  if file:Open(filepath, 2) then -- mode 2 = write
-    file:Write(jsonBody)
-    file:Close()
-    file:destroy()
-    debugPrint("Saved pending score: " .. filename)
+
+  local lines = readPendingLines(player)
+
+  if #lines >= MAX_PENDING_SCORES then
+    debugPrint("Pending scores at capacity (" .. MAX_PENDING_SCORES .. "), cannot save")
+    return "full"
+  end
+
+  -- Wrap the payload with its hash and timestamp so we know which endpoint to retry
+  local wrapper = { hash = hash, data = data, pendingDate = getCurrentTimestamp() }
+  local jsonLine = encodeJson(wrapper)
+
+  table.insert(lines, jsonLine)
+  if writePendingLines(player, lines) then
+    debugPrint("Saved pending score (" .. #lines .. "/" .. MAX_PENDING_SCORES .. ")")
     return true
   else
-    file:destroy()
-    debugPrint("Failed to save pending score: " .. filename)
+    debugPrint("Failed to write pending scores file")
     return false
   end
 end
@@ -661,7 +614,10 @@ local function sendScoreData(data, apiKey, hash, player, isSilent, onComplete)
 
         -- If submission failed due to being offline, save for retry
         if ENABLE_PENDING_SCORES and not ok and status == 0 then
-          savePendingScore(player, data, hash)
+          local saveResult = savePendingScore(player, data, hash)
+          if saveResult == "full" then
+            MESSAGEMAN:Broadcast("ArrowCloudPendingFull", { player = player and ToEnumShortString(player) or nil })
+          end
         end
 
         -- Truncate body for logging after we've tried to parse it
@@ -696,36 +652,42 @@ local function sendScoreData(data, apiKey, hash, player, isSilent, onComplete)
   }
 end
 
--- Retry pending scores from previous sessions
+-- Retry pending scores from previous sessions.
+-- Processes scores one at a time from the front of the JSONL file.
+-- Because each successful removal shifts line indices, we always retry
+-- the first entry and re-read after each success.
 local function retryPendingScores(player, callback)
   if not ENABLE_PENDING_SCORES then
     if callback then callback(0, true) end
     return
   end
-  
+
   local pendingScores = loadPendingScores(player)
-  
+
   if #pendingScores == 0 then
     if callback then callback(0, true) end
     return
   end
-  
+
   debugPrint("Retrying " .. #pendingScores .. " pending score(s)")
-  
+
   local successCount = 0
   local remaining = #pendingScores
-  
+
   for _, pending in ipairs(pendingScores) do
-    -- Read API key from player profile for retry attempts
     local config = readApiKey(player)
     if config and config.apiKey and config.apiKey ~= "" then
-      -- Send the raw JSON directly
       local url = BASE_URL .. "/v1/chart/" .. pending.hash .. "/play"
-      
+      -- Mark as a pending retry with the original play timestamp
+      pending.innerData.wasPending = true
+      pending.innerData.pendingDate = pending.pendingDate or getCurrentTimestamp()
+      -- Re-encode inner data for the HTTP body
+      local body = encodeJson(pending.innerData)
+
       NETWORK:HttpRequest {
         url = url,
         method = "POST",
-        body = pending.data,
+        body = body,
         headers = {
           ["Content-Type"] = "application/json",
           ["Authorization"] = "Bearer " .. config.apiKey
@@ -733,20 +695,28 @@ local function retryPendingScores(player, callback)
         onResponse = function(response)
           local ok = false
           local status = nil
-          
+
           if type(response) == "table" then
             status = response.statusCode
             ok = (status ~= nil and status >= 200 and status < 300)
           end
-          
+
           if ok then
-            deletePendingScore(player, pending.filename)
+            -- Remove by re-reading lines and finding the matching one
+            -- (indices may have shifted from earlier removals in the same batch)
+            local currentLines = readPendingLines(player)
+            for idx, line in ipairs(currentLines) do
+              if line == pending.data then
+                removePendingScore(player, idx)
+                break
+              end
+            end
             successCount = successCount + 1
-            debugPrint("Successfully retried pending score: " .. pending.filename)
+            debugPrint("Successfully retried pending score #" .. pending.lineIndex)
           else
-            debugPrint("Retry failed for: " .. pending.filename .. " (status: " .. tostring(status) .. ")")
+            debugPrint("Retry failed for pending score #" .. pending.lineIndex .. " (status: " .. tostring(status) .. ")")
           end
-          
+
           remaining = remaining - 1
           local isComplete = (remaining == 0)
           if callback then
@@ -1223,10 +1193,7 @@ end
 local function createACDialogActor(name)
   local af
   local dialogData = nil            -- will hold API response data
-  local rotationActive = false      -- prevent multiple rotation timers
-  local isRotating = false          -- prevent recursive calls during rotation
   local currentLeaderboardIndex = 1 -- Track which leaderboard we're showing
-  local autoRotationEnabled = true -- track if auto-rotation should continue
 
 
 
@@ -1370,40 +1337,6 @@ local function createACDialogActor(name)
       board:playcommand("SetMode", { data = rowData, leaderboardType = currentLeaderboard.type })
     end
 
-    -- Don't set up rotation here - it will be set up after dialog is visible
-  end
-
-  -- Handle leaderboard rotation
-  local function rotateToNextLeaderboard()
-    if isRotating or not dialogData or not dialogData.eventLeaderboards then
-      return
-    end
-
-    isRotating = true
-
-    local allLeaderboards = {}
-    if dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
-      allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
-    end
-
-    if #allLeaderboards > 1 then
-      currentLeaderboardIndex = (currentLeaderboardIndex % #allLeaderboards) + 1
-      applyContent() -- Re-apply with new leaderboard
-
-      -- Schedule the next rotation using the timer (only if auto-rotation is enabled)
-      if af and af:GetVisible() and autoRotationEnabled then
-        local timer = af:GetChild("RotationTimer")
-        if timer then
-          timer:sleep(3):queuecommand("TriggerRotation")
-        end
-      else
-        rotationActive = false
-      end
-    else
-      rotationActive = false
-    end
-
-    isRotating = false
   end
 
   -- Manual navigation functions
@@ -1418,18 +1351,6 @@ local function createACDialogActor(name)
     end
 
     if #allLeaderboards > 1 then
-      -- Disable auto-rotation when manual navigation is used
-      autoRotationEnabled = false
-      rotationActive = false
-      
-      -- Stop any pending rotation timer
-      if af then
-        local timer = af:GetChild("RotationTimer")
-        if timer then
-          timer:stoptweening()
-        end
-      end
-
       currentLeaderboardIndex = (currentLeaderboardIndex % #allLeaderboards) + 1
       applyContent() -- Re-apply with new leaderboard
     end
@@ -1446,18 +1367,6 @@ local function createACDialogActor(name)
     end
 
     if #allLeaderboards > 1 then
-      -- Disable auto-rotation when manual navigation is used
-      autoRotationEnabled = false
-      rotationActive = false
-      
-      -- Stop any pending rotation timer
-      if af then
-        local timer = af:GetChild("RotationTimer")
-        if timer then
-          timer:stoptweening()
-        end
-      end
-
       currentLeaderboardIndex = currentLeaderboardIndex - 1
       if currentLeaderboardIndex < 1 then
         currentLeaderboardIndex = #allLeaderboards
@@ -1476,10 +1385,7 @@ local function createACDialogActor(name)
     -- Reset dialog state when the ActorFrame is created/reset
     ResetDialogStateCommand = function(self)
       dialogData = nil
-      rotationActive = false
-      isRotating = false
       currentLeaderboardIndex = 1
-      autoRotationEnabled = true
       self:visible(false)
       -- Ensure normal evaluation input is restored
       local overlay = SCREENMAN:GetTopScreen() and SCREENMAN:GetTopScreen():GetChild("Overlay")
@@ -1494,10 +1400,7 @@ local function createACDialogActor(name)
     -- external API: Show the dialog with API response data
     ShowDialogCommand = function(self, params)
       -- Reset state before showing new dialog
-      rotationActive = false
-      isRotating = false
       currentLeaderboardIndex = 1
-      autoRotationEnabled = true
       
       -- Store response data for content application
       if params and params.responseData then
@@ -1517,16 +1420,6 @@ local function createACDialogActor(name)
       self:visible(true)
       self:stoptweening():diffusealpha(0):linear(0.15):diffusealpha(1)
       self:GetChild("Snd"):play()
-
-      -- Set up rotation after dialog becomes visible (only on first call)
-      if ENABLE_AUTO_ROTATION and dialogData and dialogData.eventLeaderboards and dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
-        local allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
-        if #allLeaderboards > 1 and not rotationActive then
-          rotationActive = true
-          -- Use a separate timer instead of sleep on the main ActorFrame
-          self:GetChild("RotationTimer"):playcommand("StartTimer")
-        end
-      end
     end,
 
     ApplyDialogContentCommand = function(self)
@@ -1556,12 +1449,7 @@ local function createACDialogActor(name)
       end
     end,
 
-    -- Handle leaderboard rotation
-    RotateLeaderboardCommand = function(self)
-      rotateToNextLeaderboard()
-    end,
-
-    -- Manual navigation commands  
+    -- Manual navigation commands
     NextLeaderboardCommand = function(self)
       navigateToNextLeaderboard()
     end,
@@ -1569,9 +1457,6 @@ local function createACDialogActor(name)
     PrevLeaderboardCommand = function(self)
       navigateToPrevLeaderboard()
     end,    HideCommand = function(self)
-      rotationActive = false -- reset rotation state
-      isRotating = false     -- reset rotation guard
-      
       -- Restore normal evaluation input handling
       local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
       if overlay then
@@ -1587,7 +1472,6 @@ local function createACDialogActor(name)
       -- Clear dialog data when fully hidden to prevent persistence
       dialogData = nil
       currentLeaderboardIndex = 1
-      autoRotationEnabled = true
     end,
 
     -- sfx (re-use prompt sound)
@@ -1947,16 +1831,6 @@ local function createACDialogActor(name)
       }
     },
 
-    -- Separate timer ActorFrame for rotation
-    Def.ActorFrame {
-      Name = "RotationTimer",
-      StartTimerCommand = function(self)
-        self:sleep(3.2):queuecommand("TriggerRotation")
-      end,
-      TriggerRotationCommand = function(self)
-        af:playcommand("RotateLeaderboard")
-      end
-    }
   }
 end
 
@@ -1989,8 +1863,8 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     if p2Text then p2Text:settext("") end
     if p1ErrMsg then p1ErrMsg:settext("") end
     if p2ErrMsg then p2ErrMsg:settext("") end
-    if p1Pending then p1Pending:settext("") end
-    if p2Pending then p2Pending:settext("") end
+    if p1Pending then p1Pending:stoptweening():settext(""):diffusealpha(1):diffusecolor({ 1, 0.8, 0.2, 1 }) end
+    if p2Pending then p2Pending:stoptweening():settext(""):diffusealpha(1):diffusecolor({ 1, 0.8, 0.2, 1 }) end
     self.waiting = { P1 = false, P2 = false }
 
     local style = GAMESTATE:GetCurrentStyle():GetName()
@@ -2004,15 +1878,12 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       local label = (pn == "P1") and p1Text or p2Text
       local pendingLabel = (pn == "P1") and p1Pending or p2Pending
       
-      -- Clean up old pending scores for this player
+      -- Show initial pending count for this player
       if ENABLE_PENDING_SCORES then
-        cleanupOldPendingScores(player)
-        
-        -- Show initial pending count for this player
         local pendingCount = countPendingScores(player)
         if pendingCount > 0 and pendingLabel then
-          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
-          pendingLabel:settext(pendingText)
+          pendingLabel:settext(formatPendingText(pendingCount))
+          pendingLabel:diffusecolor(pendingLabelColor(pendingCount))
         end
       end
       
@@ -2062,16 +1933,22 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
         if remainingCount == 0 and successCount > 0 then
           -- All scores submitted successfully
           if pendingLabel then
+            pendingLabel:stoptweening()
             pendingLabel:settext("✔ All scores submitted")
             pendingLabel:diffusecolor({ 0.2, 1, 0.2, 1 }) -- Green
+            pendingLabel:diffusealpha(1)
             if isComplete then
               pendingLabel:sleep(3):smooth(0.5):diffusealpha(0)
             end
           end
         elseif remainingCount > 0 then
           -- Update count after each score is processed
-          local pendingText = remainingCount .. " pending score" .. (remainingCount == 1 and "" or "s")
-          if pendingLabel then pendingLabel:settext(pendingText) end
+          if pendingLabel then
+            pendingLabel:stoptweening()
+            pendingLabel:diffusecolor(pendingLabelColor(remainingCount))
+            pendingLabel:diffusealpha(1)
+            pendingLabel:settext(formatPendingText(remainingCount))
+          end
         end
       end)
     end
@@ -2095,17 +1972,22 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
         errLabel:settext("Status: 401. Check your API key.")
       elseif not params.ok and params.status == 0 then
         errLabel:settext("You are offline.")
-        -- Show pending count immediately
-        if ENABLE_PENDING_SCORES then
-          local player = (pn == "P1") and PLAYER_1 or PLAYER_2
-          local pendingCount = countPendingScores(player)
-          if pendingCount > 0 and pendingLabel then
-            local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
-            pendingLabel:settext(pendingText)
-          end
-        end
       elseif not params.ok then
         errLabel:settext("Status: " .. tostring(params.status) .. ". " .. (params.message or "Unknown error."))
+      end
+
+      -- Always refresh pending count after any submission result (success or failure)
+      -- New failures add pending scores; the count may have changed
+      if ENABLE_PENDING_SCORES and pendingLabel then
+        local player = (pn == "P1") and PLAYER_1 or PLAYER_2
+        local pendingCount = countPendingScores(player)
+        if pendingCount > 0 then
+          pendingLabel:stoptweening()
+          pendingLabel:diffusecolor({ 1, 0.8, 0.2, 1 }) -- Yellow/orange
+          pendingLabel:diffusealpha(1)
+          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+          pendingLabel:settext(pendingText)
+        end
       end
 
       self.waiting[pn] = false
@@ -2119,6 +2001,17 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       if dialog then
         dialog:playcommand("ShowDialog", { responseData = params.responseData })
       end
+    end
+  end,
+
+  -- Handle pending scores at capacity
+  ArrowCloudPendingFullMessageCommand = function(self, params)
+    if not params or not params.player then return end
+    local pn = params.player
+    local pendingLabel = self:GetChild(pn == "P1" and "ACPendingP1" or "ACPendingP2")
+    if pendingLabel then
+      pendingLabel:settext("Pending scores full (" .. MAX_PENDING_SCORES .. "). Connect to submit.")
+      pendingLabel:diffusecolor({ 1, 0.3, 0.3, 1 }) -- Red for error
     end
   end,
 
@@ -2206,8 +2099,8 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
     if p2Text then p2Text:settext("") end
     if p1ErrMsg then p1ErrMsg:settext("") end
     if p2ErrMsg then p2ErrMsg:settext("") end
-    if p1Pending then p1Pending:settext("") end
-    if p2Pending then p2Pending:settext("") end
+    if p1Pending then p1Pending:stoptweening():settext(""):diffusealpha(1):diffusecolor({ 1, 0.8, 0.2, 1 }) end
+    if p2Pending then p2Pending:stoptweening():settext(""):diffusealpha(1):diffusecolor({ 1, 0.8, 0.2, 1 }) end
 
     local fixed = GAMESTATE:GetCurrentCourse():AllSongsAreFixed()
     local autogen = GAMESTATE:GetCurrentCourse():IsAutogen()
@@ -2227,15 +2120,12 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
         local pn = ToEnumShortString(player)
         local pendingLabel = (pn == "P1") and p1Pending or p2Pending
         
-        -- Clean up old pending scores for this player
+        -- Show initial pending count for this player
         if ENABLE_PENDING_SCORES then
-          cleanupOldPendingScores(player)
-          
-          -- Show initial pending count for this player
           local pendingCount = countPendingScores(player)
           if pendingCount > 0 and pendingLabel then
-            local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
-            pendingLabel:settext(pendingText)
+            pendingLabel:settext(formatPendingText(pendingCount))
+            pendingLabel:diffusecolor(pendingLabelColor(pendingCount))
           end
         end
         
@@ -2291,16 +2181,22 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
         if remainingCount == 0 and successCount > 0 then
           -- All scores submitted successfully
           if pendingLabel then
-            pendingLabel:settext("✅ All scores submitted")
+            pendingLabel:stoptweening()
+            pendingLabel:settext("✔ All scores submitted")
             pendingLabel:diffusecolor({ 0.2, 1, 0.2, 1 }) -- Green
+            pendingLabel:diffusealpha(1)
             if isComplete then
               pendingLabel:sleep(3):smooth(0.5):diffusealpha(0)
             end
           end
         elseif remainingCount > 0 then
           -- Update count after each score is processed
-          local pendingText = remainingCount .. " pending score" .. (remainingCount == 1 and "" or "s")
-          if pendingLabel then pendingLabel:settext(pendingText) end
+          if pendingLabel then
+            pendingLabel:stoptweening()
+            pendingLabel:diffusealpha(1)
+            pendingLabel:settext(formatPendingText(remainingCount))
+            pendingLabel:diffusecolor(pendingLabelColor(remainingCount))
+          end
         end
       end)
     end
@@ -2320,17 +2216,20 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
         if errLabel then errLabel:settext("Status: 401. Check your API key.") end
       elseif not params.ok and params.status == 0 then
         if errLabel then errLabel:settext("You are offline.") end
-        -- Show pending count immediately
-        if ENABLE_PENDING_SCORES then
-          local player = (pn == "P1") and PLAYER_1 or PLAYER_2
-          local pendingCount = countPendingScores(player)
-          if pendingCount > 0 and pendingLabel then
-            local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
-            pendingLabel:settext(pendingText)
-          end
-        end
       elseif not params.ok then
         if errLabel then errLabel:settext("Status: " .. tostring(params.status) .. ". " .. (params.message or "Unknown error.")) end
+      end
+
+      -- Always refresh pending count after any submission result (success or failure)
+      if ENABLE_PENDING_SCORES and pendingLabel then
+        local player = (pn == "P1") and PLAYER_1 or PLAYER_2
+        local pendingCount = countPendingScores(player)
+        if pendingCount > 0 then
+          pendingLabel:stoptweening()
+          pendingLabel:diffusealpha(1)
+          pendingLabel:settext(formatPendingText(pendingCount))
+          pendingLabel:diffusecolor(pendingLabelColor(pendingCount))
+        end
       end
 
       self.waiting[pn] = false
@@ -2344,6 +2243,17 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       if dialog then
         dialog:playcommand("ShowDialog", { responseData = params.responseData })
       end
+    end
+  end,
+
+  -- Handle pending scores at capacity
+  ArrowCloudPendingFullMessageCommand = function(self, params)
+    if not params or not params.player then return end
+    local pn = params.player
+    local pendingLabel = self:GetChild(pn == "P1" and "ACPendingP1" or "ACPendingP2")
+    if pendingLabel then
+      pendingLabel:settext(formatPendingText(MAX_PENDING_SCORES))
+      pendingLabel:diffusecolor(pendingLabelColor(MAX_PENDING_SCORES))
     end
   end,
 

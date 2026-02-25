@@ -88,6 +88,8 @@ local input = function(event)
 				elseif focus.new_overlay == "Leaderboard" then
 					-- The leaderboard entry is removed altogether if the service isn't available.
 					sortmenu:queuecommand("DirectInputToLeaderboard")
+				elseif focus.new_overlay == "ACLeaderboard" then
+					sortmenu:queuecommand("DirectInputToACLeaderboard")
 				elseif focus.new_overlay == "SongSearch" then
 					-- Direct the input back to the engine, so that the ScreenTextEntry overlay
 					-- works correctly.

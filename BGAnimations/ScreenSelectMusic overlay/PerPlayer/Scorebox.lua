@@ -106,7 +106,9 @@ end
 ResetAllData()
 
 -- Checks to see if any data is available.
+local hideGrooveStats = ThemePrefs.Get("HideGrooveStats")
 local HasData = function(idx)
+	if hideGrooveStats and idx <= 3 then return false end
 	return all_data[idx+1] and all_data[idx+1].has_data
 end
 
@@ -406,13 +408,6 @@ local LeaderboardRequestProcessor = function(res, master)
 end
 
 -- ArrowCloud integration --------------------------------------------------
--- Temporary restriction: only enable Arrow Cloud leaderboard behavior for packs containing "Blue Shift".
-local function ShouldAllowArrowCloudForCurrentPack()
-	local song = GAMESTATE:GetCurrentSong()
-	if not song then return false end
-	local group = song:GetGroupName() or ""
-	return string.find(string.lower(group), "blue shift", 1, true) ~= nil
-end
 
 local ArrowCloudRequestProcessor = function(res)
 	-- Expect res.statusCode and res.body (raw JSON string)
@@ -629,7 +624,7 @@ local af = Def.ActorFrame{
 				end
 
 				-- ArrowCloud direct request (independent of GS). We perform a separate HTTP call.
-						if willDoArrowCloud and ShouldAllowArrowCloudForCurrentPack() then
+						if willDoArrowCloud then
 					local ach = SL[pn].Streams.Hash
 					local acHeaders = {}
 					acHeaders["Authorization"] = "Bearer " .. SL[pn].ArrowCloudApiKey

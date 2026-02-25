@@ -1,0 +1,357 @@
+{
+  "hash": "4773cf4e2912c556",
+  "leaderboards": [
+    {
+      "type": "EX",
+      "id": 2,
+      "scores": [
+        {
+          "rank": "1",
+          "score": "99.96",
+          "grade": "Quad",
+          "alias": "Kigha",
+          "userId": "2e11e210-fdbc-4e92-bc90-134813d572ad",
+          "date": "2026-01-15T22:56:48.241Z",
+          "playId": 87157,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "2",
+          "score": "99.93",
+          "grade": "Quad",
+          "alias": "LegendaryN8",
+          "userId": "9d7f9af8-83d7-4fa5-a684-b022ebcf2922",
+          "date": "2025-12-15T01:57:06.825Z",
+          "playId": 39950,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "3",
+          "score": "99.81",
+          "grade": "Quad",
+          "alias": "Berserker",
+          "userId": "a143c9ee-1078-408b-a39e-bd0e2802c3cb",
+          "date": "2025-12-12T23:47:30.406Z",
+          "playId": 36392,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "4",
+          "score": "99.78",
+          "grade": "Tristar",
+          "alias": "dimo",
+          "userId": "a5dd627d-c5c7-47a7-99b2-854dbb80bfe7",
+          "date": "2026-02-17T20:56:03.868Z",
+          "playId": 137542,
+          "isSelf": false,
+          "isRival": true
+        },
+        {
+          "rank": "5",
+          "score": "99.71",
+          "grade": "Tristar",
+          "alias": "STVB",
+          "userId": "e140c341-04a0-4a68-a9d4-3b2060c93251",
+          "date": "2025-12-07T20:47:13.746Z",
+          "playId": 28477,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "6",
+          "score": "99.68",
+          "grade": "Quad",
+          "alias": "Wafles",
+          "userId": "27cfc687-8d10-4132-bd29-da3b4ef54dfb",
+          "date": "2025-12-14T18:13:16.501Z",
+          "playId": 38789,
+          "isSelf": true,
+          "isRival": false
+        },
+        {
+          "rank": "7",
+          "score": "99.62",
+          "grade": "Quad",
+          "alias": "xancara",
+          "userId": "60303473-278e-4a2f-8911-f9dc7b73d820",
+          "date": "2025-12-15T21:40:26.909Z",
+          "playId": 40725,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "8",
+          "score": "99.59",
+          "grade": "Quad",
+          "alias": "Lazorcat",
+          "userId": "5441ea8a-2374-4ee2-af02-ca92a4647929",
+          "date": "2025-12-05T03:47:35.918Z",
+          "playId": 24072,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "9",
+          "score": "99.59",
+          "grade": "Quad",
+          "alias": "bswagg",
+          "userId": "dace3e4f-ddb1-48de-a57b-148dec6e3e9d",
+          "date": "2026-02-22T20:00:41.911Z",
+          "playId": 145743,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "10",
+          "score": "99.52",
+          "grade": "Quad",
+          "alias": "SkyCommand",
+          "userId": "da1f9eb5-0e4f-46b0-b9e4-e99895d73686",
+          "date": "2026-01-21T01:56:31.609Z",
+          "playId": 94260,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "11",
+          "score": "99.46",
+          "grade": "Quad",
+          "alias": "PinkDad",
+          "userId": "60254d1f-21be-485c-857b-5d9e053be92f",
+          "date": "2026-01-07T21:40:30.583Z",
+          "playId": 74565,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "12",
+          "score": "99.37",
+          "grade": "Tristar",
+          "alias": "Kerpa",
+          "userId": "a8a0fa93-94d9-4fef-a004-38c76876adbb",
+          "date": "2025-12-01T23:18:49.353Z",
+          "playId": 20711,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "13",
+          "score": "99.37",
+          "grade": "Quad",
+          "alias": "Koffee",
+          "userId": "21cb5bc2-6c75-4422-9dd3-8425abfc19b6",
+          "date": "2025-12-04T02:03:58.944Z",
+          "playId": 22654,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "14",
+          "score": "99.15",
+          "grade": "Tristar",
+          "alias": "BSG",
+          "userId": "6c3080da-7be6-4206-b0d4-4fac445c9dbe",
+          "date": "2025-12-20T22:14:09.971Z",
+          "playId": 48312,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "18",
+          "score": "98.18",
+          "grade": "Tristar",
+          "alias": "RootReducer",
+          "userId": "c7013a05-b4a1-41be-8228-d70e75144d49",
+          "date": "2026-01-27T22:41:05.102Z",
+          "playId": 104665,
+          "isSelf": false,
+          "isRival": true
+        }
+      ],
+      "page": 1,
+      "perPage": 15,
+      "hasNext": true,
+      "total": 27,
+      "totalPages": 2
+    },
+    {
+      "type": "HardEX",
+      "id": 4,
+      "scores": [
+        {
+          "rank": "1",
+          "score": "99.30",
+          "grade": "Tristar",
+          "alias": "dimo",
+          "userId": "a5dd627d-c5c7-47a7-99b2-854dbb80bfe7",
+          "date": "2026-02-17T20:56:03.868Z",
+          "playId": 137542,
+          "isSelf": false,
+          "isRival": true
+        },
+        {
+          "rank": "2",
+          "score": "99.15",
+          "grade": "Quad",
+          "alias": "Kigha",
+          "userId": "2e11e210-fdbc-4e92-bc90-134813d572ad",
+          "date": "2026-01-15T22:56:48.241Z",
+          "playId": 87157,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "3",
+          "score": "98.93",
+          "grade": "Quad",
+          "alias": "LegendaryN8",
+          "userId": "9d7f9af8-83d7-4fa5-a684-b022ebcf2922",
+          "date": "2025-12-15T01:57:06.825Z",
+          "playId": 39950,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "4",
+          "score": "98.39",
+          "grade": "Quad",
+          "alias": "Berserker",
+          "userId": "a143c9ee-1078-408b-a39e-bd0e2802c3cb",
+          "date": "2025-12-12T23:47:30.406Z",
+          "playId": 36392,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "5",
+          "score": "98.27",
+          "grade": "Tristar",
+          "alias": "bswagg",
+          "userId": "dace3e4f-ddb1-48de-a57b-148dec6e3e9d",
+          "date": "2026-01-09T19:55:13.377Z",
+          "playId": 77606,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "6",
+          "score": "98.24",
+          "grade": "Quad",
+          "alias": "Wafles",
+          "userId": "27cfc687-8d10-4132-bd29-da3b4ef54dfb",
+          "date": "2025-12-14T18:13:16.501Z",
+          "playId": 38789,
+          "isSelf": true,
+          "isRival": false
+        },
+        {
+          "rank": "7",
+          "score": "98.21",
+          "grade": "Quad",
+          "alias": "xancara",
+          "userId": "60303473-278e-4a2f-8911-f9dc7b73d820",
+          "date": "2025-12-15T21:40:26.909Z",
+          "playId": 40725,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "8",
+          "score": "98.02",
+          "grade": "Tristar",
+          "alias": "Lazorcat",
+          "userId": "5441ea8a-2374-4ee2-af02-ca92a4647929",
+          "date": "2025-12-05T03:40:57.979Z",
+          "playId": 24055,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "9",
+          "score": "97.99",
+          "grade": "Quad",
+          "alias": "PinkDad",
+          "userId": "60254d1f-21be-485c-857b-5d9e053be92f",
+          "date": "2026-01-07T21:40:30.583Z",
+          "playId": 74565,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "10",
+          "score": "97.67",
+          "grade": "Tristar",
+          "alias": "Kerpa",
+          "userId": "a8a0fa93-94d9-4fef-a004-38c76876adbb",
+          "date": "2025-12-01T23:18:49.353Z",
+          "playId": 20711,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "11",
+          "score": "97.61",
+          "grade": "Tristar",
+          "alias": "STVB",
+          "userId": "e140c341-04a0-4a68-a9d4-3b2060c93251",
+          "date": "2025-12-07T20:47:13.746Z",
+          "playId": 28477,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "12",
+          "score": "97.45",
+          "grade": "Quad",
+          "alias": "SkyCommand",
+          "userId": "da1f9eb5-0e4f-46b0-b9e4-e99895d73686",
+          "date": "2026-01-21T01:56:31.609Z",
+          "playId": 94260,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "13",
+          "score": "97.20",
+          "grade": "Quad",
+          "alias": "Koffee",
+          "userId": "21cb5bc2-6c75-4422-9dd3-8425abfc19b6",
+          "date": "2025-12-04T02:03:58.944Z",
+          "playId": 22654,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "14",
+          "score": "96.92",
+          "grade": "Tristar",
+          "alias": "Rarily",
+          "userId": "f0100146-e138-41dc-8a0a-a59d38c0d2d5",
+          "date": "2025-12-03T15:15:41.673Z",
+          "playId": 22143,
+          "isSelf": false,
+          "isRival": false
+        },
+        {
+          "rank": "16",
+          "score": "95.73",
+          "grade": "Tristar",
+          "alias": "RootReducer",
+          "userId": "c7013a05-b4a1-41be-8228-d70e75144d49",
+          "date": "2026-01-27T22:41:05.102Z",
+          "playId": 104665,
+          "isSelf": false,
+          "isRival": true
+        }
+      ],
+      "page": 1,
+      "perPage": 15,
+      "hasNext": true,
+      "total": 27,
+      "totalPages": 2
+    }
+  ]
+}

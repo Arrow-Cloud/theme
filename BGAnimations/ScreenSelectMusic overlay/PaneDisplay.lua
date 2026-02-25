@@ -369,15 +369,8 @@ af[#af+1] = RequestResponseActor(17, 50)..{
 
 		-- Only send the request if it's applicable.
 		if sendRequest then
-			-- Temporary restriction: only enable Arrow Cloud behavior for packs containing "Blue Shift".
-			local function ShouldAllowArrowCloudForCurrentPack()
-				local song = GAMESTATE:GetCurrentSong()
-				if not song then return false end
-				local group = song:GetGroupName() or ""
-				return string.find(string.lower(group), "blue shift", 1, true) ~= nil
-			end
 			-- ArrowCloud minimal logging: invoke for each player hash we are about to request
-			if SL and SL.ArrowCloud and SL.ArrowCloud.Enabled and ShouldAllowArrowCloudForCurrentPack() then
+			if SL and SL.ArrowCloud and SL.ArrowCloud.Enabled then
 				for i=1,2 do
 					local pn = "P"..i
 					if SL[pn] and SL[pn].Streams and SL[pn].Streams.Hash and #SL[pn].Streams.Hash>0 then

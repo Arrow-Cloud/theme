@@ -91,7 +91,9 @@ end
 ResetAllData()
 
 -- Checks to see if any data is available.
+local hideGrooveStats = ThemePrefs.Get("HideGrooveStats")
 local HasData = function(idx)
+	if hideGrooveStats and idx <= 3 then return false end
 	return all_data[idx+1] and all_data[idx+1].has_data
 end
 
@@ -132,13 +134,6 @@ local SetScoreData = function(data_idx, score_idx, rank, name, score, isSelf, is
 end
 
 -- ArrowCloud integration (gameplay) --------------------------------------
--- Temporary restriction: only enable Arrow Cloud behavior for packs containing "Blue Shift".
-local function ShouldAllowArrowCloudForCurrentPack()
-	local song = GAMESTATE:GetCurrentSong()
-	if not song then return false end
-	local group = song:GetGroupName() or ""
-	return string.find(string.lower(group), "blue shift", 1, true) ~= nil
-end
 
 local ArrowCloudRequestProcessor = function(res)
 	-- Expect res.statusCode and res.body (raw JSON string)
@@ -491,7 +486,7 @@ local af = Def.ActorFrame{
 			local acHash = (SL[pn] and SL[pn].Streams and SL[pn].Streams.Hash and #SL[pn].Streams.Hash > 0) or false
 			local willDoArrowCloud = acEnabled and acKey and acHash
 
-			if willDoArrowCloud and ShouldAllowArrowCloudForCurrentPack() then
+			if willDoArrowCloud then
 				local ach = SL[pn].Streams.Hash
 				local acHeaders = { Authorization = "Bearer " .. SL[pn].ArrowCloudApiKey }
 				NETWORK:HttpRequest{
