@@ -92,6 +92,9 @@ local AttemptDownloads = function(res)
 	for i=1,2 do
 		local playerStr = "player"..i
 		local events = {"rpg", "itl"}
+		local player = "PlayerNumber_P"..i
+		local itlDownloadsFound = false
+
 
 		for event in ivalues(events) do
 			if data and data[playerStr] and data[playerStr][event] then
@@ -108,9 +111,14 @@ local AttemptDownloads = function(res)
 							local url = quest["songDownloadUrl"]
 							local title = quest["title"] or ""
 
+							if event == "itl" then
+								local downloadFolders = quest["songDownloadFolders"] or {}
+								UpdateItlUnlocks(player, downloadFolders)
+								itlDownloadsFound = true
+							end
+
 							if ThemePrefs.Get("SeparateUnlocksByPlayer") then
 								local profileName = "NoName"
-								local player = "PlayerNumber_P"..i
 								if (PROFILEMAN:IsPersistentProfile(player) and
 										PROFILEMAN:GetProfile(player)) then
 									profileName = PROFILEMAN:GetProfile(player):GetDisplayName()
@@ -124,6 +132,11 @@ local AttemptDownloads = function(res)
 					end
 				end
 			end
+		end
+
+		if itlDownloadsFound then
+			-- Write out the file
+			WriteItlFile(player)
 		end
 	end
 end
@@ -512,7 +525,7 @@ local af = Def.ActorFrame {
 				local pn = ToEnumShortString(player)
 
 				if GAMESTATE:IsHumanPlayer(player) and GAMESTATE:IsSideJoined(player) then
-					local _, valid = ValidForGrooveStats(player)
+					local _, valid, _ = ValidForGrooveStats(player)
 					local stats = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
 					local submitForPlayer = false
 
@@ -536,6 +549,7 @@ local af = Def.ActorFrame {
 								rescoreCounts=GetRescoredJudgmentCounts(player),
 								usedCmod=(GAMESTATE:GetPlayerState(pn):GetPlayerOptions("ModsLevel_Preferred"):CMod() ~= nil),
 								comment=CreateCommentString(player),
+								playerOptions=GetPlayerOptionsJsonForGrooveStats(player),
 							}
 							sendRequest = true
 							submitForPlayer = true
@@ -554,18 +568,18 @@ local af = Def.ActorFrame {
 			-- Only send the request if it's applicable.
 			if sendRequest then
 				-- Unjoined players won't have the text displayed.
-             
-                self:GetParent():GetChild("P1SubmitText"):settext(THEME:GetString("GrooveStats", "Submitting"))
+
+				self:GetParent():GetChild("P1SubmitText"):settext(THEME:GetString("GrooveStats", "Submitting"))
 				self:GetParent():GetChild("P2SubmitText"):settext(THEME:GetString("GrooveStats", "Submitting"))
 					
 				self:playcommand("MakeGrooveStatsRequest", {
-					endpoint="score-submit.php?"..NETWORK:EncodeQueryParameters(query),
+					endpoint="?action=scoreSubmit&"..NETWORK:EncodeQueryParameters(query),
 					method="POST",
 					headers=headers,
 					body=JsonEncode(body),
 					timeout=30,
 					callback=AutoSubmitRequestProcessor,
-				args=SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common"),
+					args=SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common"),
 				})
 			end
 		end

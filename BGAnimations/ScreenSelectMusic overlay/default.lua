@@ -34,6 +34,8 @@ local af = Def.ActorFrame{
 	CodeMessageCommand=function(self, params)
 		if params.Name == "Favorite1" or params.Name == "Favorite2" then
 			addOrRemoveFavorite(params.PlayerNumber)
+		elseif params.Name == "EscapeFromEventMode" then
+			SCREENMAN:GetTopScreen():Cancel()
 		end
 	end,
 	ReloadScreenForMemoryCardsMessageCommand=function(self, params)
@@ -88,10 +90,6 @@ local af = Def.ActorFrame{
 
 	-- The Arrow Cloud leaderboard (accessed from SortMenu)
 	LoadActor("./ACLeaderboard.lua"),
-
-	-- a yes/no prompt overlay for backing out of SelectMusic when in EventMode can be
-	-- activated via "CodeEscapeFromEventMode" under [ScreenSelectMusic] in Metrics.ini
-	LoadActor("./EscapeFromEventMode.lua"),
 
 	LoadActor("./SongSearch/default.lua"),
 }
