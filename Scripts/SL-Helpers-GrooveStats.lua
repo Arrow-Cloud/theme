@@ -1093,9 +1093,7 @@ GetPlayerOptionsJsonForGrooveStats = function(player)
 	local visualDelay = SL[pn].ActiveModifiers.VisualDelay:gsub("ms","")/1
 
 	-- Similarly, BackgroundFilter has options that directly map to numbers.
-	local FilterAlpha = BackgroundFilterValues()
-	local value = FilterAlpha[SL[pn].ActiveModifiers.BackgroundFilter]
-	local backgroundFilter = value and value or 0
+	local backgroundFilter = SL[pn].ActiveModifiers.BackgroundFilter or 0
 
 	-- HideLookeahead is stored as a boolean in SL, but we want to save it as
 	-- a number in GrooveStats.\
@@ -1168,14 +1166,7 @@ SetPlayerOptionsJsonFromGroovestats = function(player, jsonStr)
 					elseif key == "VisualDelay" then
 						SL[pn].ActiveModifiers[key] = value.."ms"
 					elseif key == "BackgroundFilter" then
-						local FilterAlpha = BackgroundFilterValues()
-						-- Check if the value exists in the FilterAlpha table.
-						for filterName, alpha in pairs(FilterAlpha) do
-							if alpha == value then
-								SL[pn].ActiveModifiers[key] = filterName
-								break
-							end
-						end
+            SL[pn].ActiveModifiers[key] = value
 					elseif key == "HideLookahead" then
 						SL[pn].ActiveModifiers[key] = (value > 0) and true or false
 					else

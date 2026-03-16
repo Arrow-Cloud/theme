@@ -149,7 +149,13 @@ local SetScoreData = function(data_idx, score_idx, rank, name, score, isSelf, is
 end
 
 local LeaderboardRequestProcessor = function(res, master)
-	if master == nil then return end
+  if master == nil then
+		Trace("[Scorebox] master is nil, aborting")
+		return
+	end
+
+	Trace("[Scorebox] Response statusCode: "..tostring(res.statusCode))
+	Trace("[Scorebox] Response error: "..tostring(res.error))
 
 	if res.error or res.statusCode ~= 200 then
 		local error = res.error and ToEnumShortString(res.error) or nil
@@ -680,12 +686,12 @@ local af = Def.ActorFrame{
 				if sendRequest then
 					-- GS HTTP request
 					self:playcommand("MakeGrooveStatsRequest", {
-						endpoint="player-leaderboards.php?"..NETWORK:EncodeQueryParameters(query),
-						method="GET",
-						headers=headers,
-						timeout=10,
-						callback=LeaderboardRequestProcessor,
-						args=self:GetParent(),
+            endpoint="?action=playerLeaderboards&"..NETWORK:EncodeQueryParameters(query),
+            method="GET",
+            headers=headers,
+            timeout=10,
+            callback=LeaderboardRequestProcessor,
+            args=self:GetParent(),
 					})
 				end
 			end

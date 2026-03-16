@@ -22,7 +22,7 @@ and SL.P1.ActiveModifiers.DataVisualizations == "Step Statistics"
 and SL.P2.ActiveModifiers.DataVisualizations == "Step Statistics")
 -- -----------------------------------------------------------------------
 local mods = SL[pn].ActiveModifiers
-local FilterAlpha = clamp(BackgroundFilterValues()[mods.BackgroundFilter]/100 or 0, 0.25, 1)
+local FilterAlpha = clamp(mods.BackgroundFilter/100 or 0, 0.25, 1)
 -- max_seconds is how many seconds of a stepchart we want visualized on-screen at once.
 -- For very long songs (longer than, say, 10 minutes) the density graph becomes too
 -- horizontally compressed (squeezed in, so to speak) and it's dificult to get any useful

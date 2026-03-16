@@ -6,12 +6,11 @@ local NoteFieldIsCentered = (GetNotefieldX(player) == _screen.cx)
 -- if no BackgroundFilter is necessary, it's safe to bail now
 if mods.BackgroundFilter == 0 then return end
 
-local FilterAlpha = BackgroundFilterValues()
 return Def.Quad{
 	InitCommand=function(self)
 		self:xy(GetNotefieldX(player), _screen.cy )
 			:diffuse(Color.Black)
-			:diffusealpha( FilterAlpha[mods.BackgroundFilter]/100 or 0 )
+			:diffusealpha( mods.BackgroundFilter/100 or 0 )
 			:zoomto( GetNotefieldWidth(), _screen.h )
 	end,
 	OffCommand=function(self) self:queuecommand("ComboFlash") end,

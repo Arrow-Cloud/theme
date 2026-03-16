@@ -3,16 +3,9 @@ local pn = ToEnumShortString(player)
 local mods = SL[pn].ActiveModifiers
 local NoteFieldIsCentered = (GetNotefieldX(player) == _screen.cx)
 
-local FilterAlpha = {
-	Dark = 0.5,
-	Darker = 0.75,
-	Darkest = 0.95
-}
-
 local style = GAMESTATE:GetCurrentStyle():GetName()
 
-local FilterAlpha = BackgroundFilterValues()
-local alpha = clamp(FilterAlpha[SL[ToEnumShortString(player)].ActiveModifiers.BackgroundFilter]/100 or 0, 0.25, 0.9)
+local alpha = clamp(mods.BackgroundFilter/100 or 0, 0.25, 0.9)
 if style ~= "double" then
 	return Def.Quad{
 		InitCommand=function(self)
