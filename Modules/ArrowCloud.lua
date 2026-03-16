@@ -9,6 +9,8 @@ local ArrowCloud = {}
 -- Constants
 local BASE_URL = "https://api.arrowcloud.dance"
 local MODULE_TAG = "[ArrowCloud-SLmodule]"
+local ENABLE_PENDING_SCORES = false -- Enable saving failed score submissions for retry when offline
+local ENABLE_AUTO_ROTATION = false  -- Enable automatic rotation of event leaderboards every 3 seconds
 
 -- Dialog Layout Configuration
 --
@@ -658,7 +660,7 @@ local function sendScoreData(data, apiKey, hash, player, isSilent, onComplete)
         end
 
         -- If submission failed due to being offline, save for retry
-        if not ok and status == 0 then
+        if ENABLE_PENDING_SCORES and not ok and status == 0 then
           savePendingScore(player, data, hash)
         end
 
@@ -696,6 +698,11 @@ end
 
 -- Retry pending scores from previous sessions
 local function retryPendingScores(player, callback)
+  if not ENABLE_PENDING_SCORES then
+    if callback then callback(0, true) end
+    return
+  end
+  
   local pendingScores = loadPendingScores(player)
   
   if #pendingScores == 0 then
@@ -1414,6 +1421,14 @@ local function createACDialogActor(name)
       -- Disable auto-rotation when manual navigation is used
       autoRotationEnabled = false
       rotationActive = false
+      
+      -- Stop any pending rotation timer
+      if af then
+        local timer = af:GetChild("RotationTimer")
+        if timer then
+          timer:stoptweening()
+        end
+      end
 
       currentLeaderboardIndex = (currentLeaderboardIndex % #allLeaderboards) + 1
       applyContent() -- Re-apply with new leaderboard
@@ -1434,6 +1449,14 @@ local function createACDialogActor(name)
       -- Disable auto-rotation when manual navigation is used
       autoRotationEnabled = false
       rotationActive = false
+      
+      -- Stop any pending rotation timer
+      if af then
+        local timer = af:GetChild("RotationTimer")
+        if timer then
+          timer:stoptweening()
+        end
+      end
 
       currentLeaderboardIndex = currentLeaderboardIndex - 1
       if currentLeaderboardIndex < 1 then
@@ -1496,7 +1519,7 @@ local function createACDialogActor(name)
       self:GetChild("Snd"):play()
 
       -- Set up rotation after dialog becomes visible (only on first call)
-      if dialogData and dialogData.eventLeaderboards and dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
+      if ENABLE_AUTO_ROTATION and dialogData and dialogData.eventLeaderboards and dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
         local allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
         if #allLeaderboards > 1 and not rotationActive then
           rotationActive = true
@@ -1982,13 +2005,15 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       local pendingLabel = (pn == "P1") and p1Pending or p2Pending
       
       -- Clean up old pending scores for this player
-      cleanupOldPendingScores(player)
-      
-      -- Show initial pending count for this player
-      local pendingCount = countPendingScores(player)
-      if pendingCount > 0 and pendingLabel then
-        local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
-        pendingLabel:settext(pendingText)
+      if ENABLE_PENDING_SCORES then
+        cleanupOldPendingScores(player)
+        
+        -- Show initial pending count for this player
+        local pendingCount = countPendingScores(player)
+        if pendingCount > 0 and pendingLabel then
+          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+          pendingLabel:settext(pendingText)
+        end
       end
       
       local profileCfg = readApiKey(player)
@@ -2071,11 +2096,13 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       elseif not params.ok and params.status == 0 then
         errLabel:settext("You are offline.")
         -- Show pending count immediately
-        local player = (pn == "P1") and PLAYER_1 or PLAYER_2
-        local pendingCount = countPendingScores(player)
-        if pendingCount > 0 and pendingLabel then
-          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
-          pendingLabel:settext(pendingText)
+        if ENABLE_PENDING_SCORES then
+          local player = (pn == "P1") and PLAYER_1 or PLAYER_2
+          local pendingCount = countPendingScores(player)
+          if pendingCount > 0 and pendingLabel then
+            local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+            pendingLabel:settext(pendingText)
+          end
         end
       elseif not params.ok then
         errLabel:settext("Status: " .. tostring(params.status) .. ". " .. (params.message or "Unknown error."))
@@ -2201,13 +2228,15 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
         local pendingLabel = (pn == "P1") and p1Pending or p2Pending
         
         -- Clean up old pending scores for this player
-        cleanupOldPendingScores(player)
-        
-        -- Show initial pending count for this player
-        local pendingCount = countPendingScores(player)
-        if pendingCount > 0 and pendingLabel then
-          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
-          pendingLabel:settext(pendingText)
+        if ENABLE_PENDING_SCORES then
+          cleanupOldPendingScores(player)
+          
+          -- Show initial pending count for this player
+          local pendingCount = countPendingScores(player)
+          if pendingCount > 0 and pendingLabel then
+            local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+            pendingLabel:settext(pendingText)
+          end
         end
         
         local profileCfg = readApiKey(player)
@@ -2292,11 +2321,13 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       elseif not params.ok and params.status == 0 then
         if errLabel then errLabel:settext("You are offline.") end
         -- Show pending count immediately
-        local player = (pn == "P1") and PLAYER_1 or PLAYER_2
-        local pendingCount = countPendingScores(player)
-        if pendingCount > 0 and pendingLabel then
-          local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
-          pendingLabel:settext(pendingText)
+        if ENABLE_PENDING_SCORES then
+          local player = (pn == "P1") and PLAYER_1 or PLAYER_2
+          local pendingCount = countPendingScores(player)
+          if pendingCount > 0 and pendingLabel then
+            local pendingText = pendingCount .. " pending score" .. (pendingCount == 1 and "" or "s")
+            pendingLabel:settext(pendingText)
+          end
         end
       elseif not params.ok then
         if errLabel then errLabel:settext("Status: " .. tostring(params.status) .. ". " .. (params.message or "Unknown error.")) end
