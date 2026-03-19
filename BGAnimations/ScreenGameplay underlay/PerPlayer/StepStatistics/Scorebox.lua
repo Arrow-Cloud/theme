@@ -93,7 +93,8 @@ ResetAllData()
 -- Checks to see if any data is available.
 local hideGrooveStats = ThemePrefs.Get("HideGrooveStats")
 local HasData = function(idx)
-	if hideGrooveStats and idx <= 3 then return false end
+	-- idx 3 is ITL, which should still be shown even if GrooveStats is hidden
+	if hideGrooveStats and idx <= 2 then return false end
 	return all_data[idx+1] and all_data[idx+1].has_data
 end
 
