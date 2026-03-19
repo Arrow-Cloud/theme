@@ -111,12 +111,6 @@ local AttemptDownloads = function(res)
 							local url = quest["songDownloadUrl"]
 							local title = quest["title"] or ""
 
-							if event == "itl" then
-								local downloadFolders = quest["songDownloadFolders"] or {}
-								UpdateItlUnlocks(player, downloadFolders)
-								itlDownloadsFound = true
-							end
-
 							if ThemePrefs.Get("SeparateUnlocksByPlayer") then
 								local profileName = "NoName"
 								if (PROFILEMAN:IsPersistentProfile(player) and
@@ -132,11 +126,6 @@ local AttemptDownloads = function(res)
 					end
 				end
 			end
-		end
-
-		if itlDownloadsFound then
-			-- Write out the file
-			WriteItlFile(player)
 		end
 	end
 end
@@ -363,6 +352,26 @@ local AutoSubmitRequestProcessor = function(res, overlay)
 						local eventAf = overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):GetChild("P"..i.."EventAf")
 						eventAf:playcommand("Show", {data=data[playerStr]})
 						shouldDisplayOverlay = true
+
+						if data[playerStr]["itl"] then
+							-- Check for downloadFolders
+							local itlData = data[playerStr]["itl"]
+							if itlData["progress"] and itlData["progress"]["questsCompleted"] then
+								local quests = itlData["progress"]["questsCompleted"]
+								local hasDownloadFolders = false
+								for quest in ivalues(quests) do
+									if quest["songDownloadFolders"] then
+										local downloadFolders = quest["songDownloadFolders"]
+										UpdateItlUnlocks("PlayerNumber_P"..side, downloadFolders)
+										hasDownloadFolders = true
+									end
+								end
+								if hasDownloadFolders then
+									-- Write out the file if we found any download unlocks.
+									WriteItlFile("PlayerNumber_P"..side)
+								end
+							end
+						end
 					end
 
 					-- Only update PB/WR messages on the side that is joined

@@ -40,7 +40,7 @@ end
 
 
 -- -----------------------------------------------------------------------
--- The ITL file is a JSON file that contains two mappings:
+-- The ITL file is a JSON file that contains three mappings:
 --
 -- {
 --    pathMap = {
@@ -48,6 +48,9 @@ end
 --    },
 --    hashMap = {
 --      '<song_hash': { ..itl metadata .. }
+--    }
+--    unlockFolders = {
+--      '<song_dir>': true
 --    }
 -- }
 --
@@ -134,8 +137,8 @@ end
 UpdateItlUnlocks = function(player, downloadFolders)
 	local pn = ToEnumShortString(player)
 	local unlockFolders = SL[pn].ITLData["unlockFolders"]
-	for _, folder in ipairs(downloadFolders) do
-		unlockFolders["/Songs/ITL Online 2026 Unlocks/" .. folder .. "/"] = true
+	for folder in ivalues(downloadFolders) do
+		unlockFolders[folder] = true
 	end
 end
 

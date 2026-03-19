@@ -435,6 +435,10 @@ ValidForGrooveStats = function(player)
 		return math.abs(a-b) < 0.0001
 	end
 
+	local FloatLE = function(a, b)
+		return a < b + 0.0001
+	end
+
 	valid[7] = Check(FloatEquals(THEME:GetMetric("LifeMeterBar", "InitialValue"), 0.5), "- Lifebar Initial Value", badSettings) and valid[7]
 	valid[7] = Check(PREFSMAN:GetPreference("HarshHotLifePenalty"), "- HarshHotLifePenalty", badSettings) and valid[7]
 
@@ -450,8 +454,9 @@ ValidForGrooveStats = function(player)
 		end
 
 		for i, window in ipairs(LifeWindows) do
-			valid[7] = Check(FloatEquals(THEME:GetMetric("LifeMeterBar", "LifePercentChange"..window), ExpectedLife[i]), "- LifePercentChange"..window, badSettings) and valid[7]
-
+			-- We can support *harder* lifebars (i.e. <= the expected weights).
+			valid[7] = Check(FloatLE(THEME:GetMetric("LifeMeterBar", "LifePercentChange"..window), ExpectedLife[i]), "- LifePercentChange"..window, badSettings) and valid[7]
+		
 			valid[7] = Check(THEME:GetMetric("ScoreKeeperNormal", "PercentScoreWeight"..window) == ExpectedScoreWeight[i], "- PercentScoreWeight"..window, badSettings) and valid[7]
 		end
 	end

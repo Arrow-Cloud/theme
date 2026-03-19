@@ -2,6 +2,7 @@
 -- set up the SortMenu's choices first, prior to Actor initialization
 -- sick_wheel_mt is a metatable with global scope defined in ./Scripts/Consensual-sick_wheel.lua
 local sort_wheel = setmetatable({}, sick_wheel_mt)
+sort_wheel.custom_functions = {}
 -- the logic that handles navigating the SortMenu
 -- (scrolling through choices, choosing one, canceling)
 -- is large enough that I moved it to its own file
@@ -191,6 +192,16 @@ local function DownloadsExist()
     return SL.GrooveStats.IsConnected and ThemePrefs.Get("AutoDownloadUnlocks")
 end
 
+local function PracticeModeAvailable()
+	-- Don't allow practice mode if we're using online lobbies
+	local onlineHandler = GetOnlineHandlerInstance()
+	if onlineHandler and onlineHandler.connected then
+		return false
+	end
+
+	return GAMESTATE:IsEventMode() and GAMESTATE:GetCurrentSong() ~= nil and ThemePrefs.Get("KeyboardFeatures")
+end
+
 local function AddPlayerSortOptions()
     local player_sort_options = {}
     for player in ivalues(GAMESTATE:GetHumanPlayers()) do
@@ -327,7 +338,9 @@ end
 local t = Def.ActorFrame {
 	Name="SortMenu",
 	wheel_options = {},
+	custom_functions = {},
 	InitCommand=function(self)
+		self.custom_functions = sort_wheel.custom_functions
 		self.wheel_options = {
 			-- This is the master table that controls the SortMenu's choices
 			-- The structure is as follows:
@@ -394,7 +407,7 @@ local t = Def.ActorFrame {
 				{"", "CategoryAdvanced"},
 				{
 					{ {"FeelingSalty", "TestInput"}, GAMESTATE:IsEventMode() },
-					{ {"HardTime", "PracticeMode"}, function() return GAMESTATE:IsEventMode() and GAMESTATE:GetCurrentSong() ~= nil and ThemePrefs.Get("KeyboardFeatures") end },
+					{ {"HardTime", "PracticeMode"}, PracticeModeAvailable },
 					{ {"TakeABreather", "LoadNewSongs"} },
 					{ {"NeedMoreRam", "ViewDownloads"}, DownloadsExist },
 					{ {"SetSummaryText", "SetSummary"}, SL.Global.Stages.PlayedThisGame > 0 },

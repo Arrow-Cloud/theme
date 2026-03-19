@@ -62,7 +62,7 @@ local password_character_mt = {
 			else
 				self.container:diffusealpha(1)
 			end
-			self.bmt:diffuse(has_focus and 1 or 0.75, has_focus and 1 or 0.75, has_focus and 1 or 0.75, 1)
+			self.bmt:diffuse(has_focus and 1 or 0.3, has_focus and 1 or 0.3, has_focus and 1 or 0.3, 1)
 			self.container:linear(0.075)
 			self.container:x(52 * (item_index - math.ceil(num_items/2)))
 		end,
@@ -128,7 +128,7 @@ local InputHandler = function(event)
 					showing_leave_confirm = false
 					t:GetChild("LeaveConfirmPrompt"):visible(false)
 				end
-			elseif event.GameButton == "Select" then
+			elseif event.GameButton == "Select" or event.GameButton == "Back" then
 				SOUND:PlayOnce(THEME:GetPathS("Common", "Cancel"))
 				showing_leave_confirm = false
 				t:GetChild("LeaveConfirmPrompt"):visible(false)
@@ -163,8 +163,9 @@ local InputHandler = function(event)
 							code=join_lobby_code,
 							password=join_lobby_password
 						})
+						-- Clear out passwords after attempting to join a lobby for security
+						join_lobby_password = ""
 					else
-						SL.Global.Online.LastLobbyPassword = create_lobby_password
 						t:playcommand("SetStatus", {
 							text="Creating lobby...",
 							showSpinner=true,
@@ -193,7 +194,7 @@ local InputHandler = function(event)
 					end
 					t:queuecommand("UpdatePasswordText")
 				end
-			elseif event.GameButton == "Select" then
+			elseif event.GameButton == "Select" or event.GameButton == "Back" then
 				local password = GetPromptPassword()
 				if password:len() > 0 then
 					SetPromptPassword(password:sub(1, -2))
@@ -336,7 +337,7 @@ local InputHandler = function(event)
 			elseif active_index == 2 then
 				SOUND:PlayOnce(THEME:GetPathS("Common", "Start"))
 				password_prompt_mode = "create"
-				create_lobby_password = SL.Global.Online.LastLobbyPassword or ""
+				create_lobby_password = ""
 				show_password_in_lobby = false
 				showing_password_prompt = true
 				t:GetChild("PasswordPrompt"):visible(true)
@@ -344,7 +345,7 @@ local InputHandler = function(event)
 				t:queuecommand("UpdatePasswordPromptUI")
 				t:queuecommand("UpdatePasswordText")
 			end
-		elseif event.GameButton == "Select" then
+		elseif event.GameButton == "Select" or event.GameButton == "Back" then
 			if list_selected then
 				list_selected = false
 				SOUND:PlayOnce(THEME:GetPathS("Common", "Cancel"))
@@ -369,7 +370,7 @@ local af = Def.ActorFrame{
 			SCREENMAN:GetTopScreen():AddInputCallback(InputHandler)
 			input_added = true
 		end
-		create_lobby_password = SL.Global.Online.LastLobbyPassword or ""
+		create_lobby_password = ""
 		password_wheel:set_info_set(password_chars, 3)
 		self:playcommand("SetStatus", {
 			text="Initializing online connection...",

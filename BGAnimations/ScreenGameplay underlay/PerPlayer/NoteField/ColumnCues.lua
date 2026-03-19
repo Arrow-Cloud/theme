@@ -33,6 +33,8 @@ else
 end
 
 local Update = function(self, delta)
+	if SCREENMAN:GetTopScreen():IsPaused() then return end
+
 	if columnCues ~= nil and curIndex <= #columnCues then
 		local curTime = playerState:GetSongPosition():GetMusicSecondsVisible()
 		local columnCue = columnCues[curIndex]

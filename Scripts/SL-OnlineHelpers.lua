@@ -7,6 +7,11 @@ local readyState = {
 	["P2"] = true
 }
 local songSelected = false
+-- Track Start button hold time for disconnect
+local startHoldTime = {
+	["P1"] = 0,
+	["P2"] = 0
+}
 -- These screens are the ones we want to display the player's scores for.
 local scoreScreens = {"ScreenGameplay", "ScreenEvaluationStage"}
 
@@ -21,23 +26,47 @@ local autoReadyScreens = {
 	["ScreenEvaluationStage"] = true,
 }
 
+local knownDisconnectScreens = {
+  ["ScreenTitleMenu"] = true,
+  ["ScreenGameOver"] = true,
+  ["ScreenNameEntryTraditional"] = true,
+  ["ScreenOptionsService"] = true,
+}
+
 -- TESTING Variables
 local host = "syncservice.groovestats.com"
 local port = 1337
-local roomCode = ""
-local action = "create" -- "create" or "join"
-local autoConnect = false
 
 -- This input handler is used to lock input while we're waiting on the server to tell us to proceed.
 -- It does nothing, but it's necessary to prevent the player from interacting with the screen
 -- until everyone is ready.
+-- Holding Start for 5 seconds will disconnect from the lobby.
 local InputHandler = function(event)
-	if SCREENMAN:GetTopScreen() and SCREENMAN:GetTopScreen():GetName() == "ScreenGameplay" and isWaiting then
+	if SCREENMAN:GetTopScreen() and isWaiting and event.PlayerNumber then
+		local pn = ToEnumShortString(event.PlayerNumber)
 		if event.type == "InputEventType_FirstPress" and event.GameButton == "Start" then
-			local pn = ToEnumShortString(event.PlayerNumber)
-			readyState[pn] = true
-
-			MESSAGEMAN:Broadcast("UpdateMachineState")
+			startHoldTime[pn] = GetTimeSinceStart()
+			if SCREENMAN:GetTopScreen():GetName() == "ScreenGameplay" then
+				readyState[pn] = true
+				MESSAGEMAN:Broadcast("UpdateMachineState")
+			end
+		elseif event.type == "InputEventType_Repeat" and event.GameButton == "Start" then
+			-- Check if Start has been held for 5 seconds
+			if startHoldTime[pn] > 0 then
+				local holdDuration = GetTimeSinceStart() - startHoldTime[pn]
+        SM("Continue holding &START; for " .. (5 - math.floor(holdDuration)) .. " more seconds to disconnect...")
+				if holdDuration >= 5.0 then
+					SM("Disconnected from lobby.")
+					startHoldTime[pn] = 0
+					isWaiting = false
+					if SCREENMAN:GetTopScreen():GetName() == "ScreenGameplay" then
+						SCREENMAN:GetTopScreen():PauseGame(false)
+					end
+					MESSAGEMAN:Broadcast("DisconnectOnline")
+				end
+			end
+		elseif event.type == "InputEventType_Release" and event.GameButton == "Start" then
+			startHoldTime[pn] = 0
 		end
 	end
 
@@ -132,7 +161,7 @@ local GetMachineState = function()
 	}
 end
 
-local OrderPlayers = function(data)
+local OrderPlayers = function(data, localScreenName)
 	local updatedData = {
 		players = {},
 
@@ -140,6 +169,8 @@ local OrderPlayers = function(data)
 		aux = {
 			-- Used to give input back to the players if we're waiting.
 			allInSameScreen = true,
+			-- Evaluation should stay locked only while any player is still in gameplay.
+			anyInGameplay = false,
 			-- Used to determine when to display the Ready/Not Ready state for players.
 			allPlayersReady = true,
 		}
@@ -148,7 +179,9 @@ local OrderPlayers = function(data)
 	--  Copy over the song info, if any.
 	updatedData.songInfo = data.songInfo
 
-	local firstScreen = nil
+	-- Use the current screen as the baseline to prevent
+	-- incorrectly reporting all players as synchronized.
+	local firstScreen = localScreenName
 	-- Process the scoreScreens first so we can sort the players by score.
 	for player in ivalues(data.players) do
 		if firstScreen == nil then
@@ -157,6 +190,10 @@ local OrderPlayers = function(data)
 
 		if player.screenName ~= firstScreen then
 			updatedData.aux.allInSameScreen = false
+		end
+
+		if player.screenName == "ScreenGameplay" then
+			updatedData.aux.anyInGameplay = true
 		end
 
 		if not player.ready then
@@ -194,6 +231,10 @@ local OrderPlayers = function(data)
 			updatedData.aux.allInSameScreen = false
 		end
 
+		if player.screenName == "ScreenGameplay" then
+			updatedData.aux.anyInGameplay = true
+		end
+
 		if not player.ready then
 			updatedData.aux.allPlayersReady = false
 		end
@@ -220,7 +261,7 @@ local DisplayLobbyState = function(data, actor)
 	local screen = SCREENMAN:GetTopScreen()
 	local screenName = screen and screen:GetName() or "NoScreen"
 
-	local updatedData = OrderPlayers(data)
+	local updatedData = OrderPlayers(data, screenName)
 
 	local lines = {}
 
@@ -229,11 +270,32 @@ local DisplayLobbyState = function(data, actor)
 		if screenName == "ScreenGameplay" then
 			-- Gameplay requires everyone to be in gameplay and manually ready-up.
 			readyToUnlock = updatedData.aux.allInSameScreen and updatedData.aux.allPlayersReady
+		elseif screenName == "ScreenEvaluationStage" then
+			-- Evaluation should only be blocked while someone is still playing.
+			readyToUnlock = not updatedData.aux.anyInGameplay
 		elseif autoReadyScreens[screenName] then
-			-- Select Music and Evaluation only require everyone to arrive at the same screen.
+			-- Other auto-ready screens require everyone to arrive at the same screen.
 			readyToUnlock = updatedData.aux.allInSameScreen
 		else
 			readyToUnlock = updatedData.aux.allPlayersReady
+		end
+
+		if screenName == "ScreenSelectMusic" and data.songInfo ~= nil then
+			-- If we're navigating back to screen select music (say from options),
+			-- then don't lock input as we will have already synced before.
+			-- In this case a song will have been selected already.
+			-- However, if someone is still in EvaluationStage, we are transitioning
+			-- eval -> music and should keep input locked until everyone arrives.
+			local anyInEval = false
+			for _, player in ipairs(updatedData.players) do
+				if player.screenName == "ScreenEvaluationStage" then
+					anyInEval = true
+					break
+				end
+			end
+			if not anyInEval then
+				readyToUnlock = true
+			end
 		end
 
 		if readyToUnlock then
@@ -251,6 +313,9 @@ local DisplayLobbyState = function(data, actor)
 			end
 		else
 			lines[#lines+1] = "Waiting for players to sync screens...\n"
+			if screenName == "ScreenGameplay" then
+				lines[#lines+1] = "Press &START; to ready up!\n"
+			end
 		end
 	end
 	for i, player in ipairs(updatedData.players) do
@@ -260,7 +325,12 @@ local DisplayLobbyState = function(data, actor)
 			readyText =" ["..(player.ready and "✔" or "❌").."]"
 		end
 
-		local playerAndScreen = i..'. '..player.profileName..readyText.." - in "..displayedScreen
+		-- Only display the screen name of the players that are on a different
+		-- screen than we are.
+		local playerAndScreen = i..'. '..player.profileName..readyText
+		if screenName ~= player.screenName then
+			playerAndScreen = playerAndScreen.." - in "..displayedScreen
+		end
 
 		lines[#lines+1] = playerAndScreen
 		for scoreScreen in ivalues(scoreScreens) do
@@ -287,6 +357,9 @@ local DisplayLobbyState = function(data, actor)
 			if topScreen and topScreen:GetName() == "ScreenSelectMusic" then
 				local song = SONGMAN:FindSong(data.songInfo.songPath)
 				local wheel = topScreen:GetMusicWheel()
+				if not song and data.songInfo.songPath:split("/")[2] then
+					song = SONGMAN:FindSong(data.songInfo.songPath:split("/")[2])
+				end
 				if song and wheel then
 					wheel:SelectSong(song)
 					wheel:Move(1)
@@ -295,7 +368,27 @@ local DisplayLobbyState = function(data, actor)
 				end
 			end
 		else
-			lines[#lines+1] = "Song: "..data.songInfo.songPath
+      -- Only display the song in ScreenSelectMusic so that players know
+      -- which songs they may need to navigate to.
+      if screenName == "ScreenSelectMusic" then
+        -- Split the song path into pack and song name for easier reading.
+        -- It looks like "<pack>/<song>" so we can just split on the first "/"
+        local songPathParts = data.songInfo.songPath:split("/")
+        local pack = songPathParts[1] or "Unknown"
+        local song = songPathParts[2] or "Unknown"
+
+        -- Sometimes the pack or song can get quite long, so add ... if it's too long.
+        local maxLength = 30
+        if #pack > maxLength then
+          pack = string.sub(pack, 1, maxLength) .. "..."
+        end
+        if #song > maxLength then
+          song = string.sub(song, 1, maxLength) .. "..."
+        end
+
+        lines[#lines+1] = "Pack: "..pack
+        lines[#lines+1] = "Song: "..song
+      end
 		end
 	end
 
@@ -384,11 +477,6 @@ CreateOnlineHandler = function()
                 self.connected = true
 								self.inLobby = false
                 self.errorMsg = nil
-                -- if action == "join" then
-                --   MESSAGEMAN:Broadcast("JoinLobby")
-                -- elseif action == "create" then
-                --   MESSAGEMAN:Broadcast("CreateLobby")
-                -- end
                 self:GetChild("Display"):visible(true)
               elseif msgType == "Message" then
                 local response = JsonDecode(msg.data)
@@ -410,15 +498,20 @@ CreateOnlineHandler = function()
       end,
       ScreenChangedMessageCommand=function(self)
         if self.connected and self.socket ~= nil then
-				if not self.inLobby then
-					return
-				end
+					if not self.inLobby then
+						return
+					end
 
           local screen = SCREENMAN:GetTopScreen()
           local screenName = screen and screen:GetName() or "NoScreen"
 
-					-- Lock input while syncing arrival on key screens.
-					if syncLockScreens[screenName] then
+          if knownDisconnectScreens[screenName] then
+            MESSAGEMAN:Broadcast("DisconnectOnline")
+            return
+          end
+
+          -- Lock input while syncing arrival on key screens.
+          if syncLockScreens[screenName] then
             isWaiting = true
 
             -- The below does work, but it's currently possible that other screens are resetting this early.
@@ -427,24 +520,39 @@ CreateOnlineHandler = function()
             end
           end
 
-					if autoReadyScreens[screenName] then
-						for player in ivalues(GAMESTATE:GetEnabledPlayers()) do
-							local pn = ToEnumShortString(player)
-							readyState[pn] = true
-						end
-					end
+		if autoReadyScreens[screenName] then
+			for player in ivalues(GAMESTATE:GetEnabledPlayers()) do
+				local pn = ToEnumShortString(player)
+				readyState[pn] = true
+			end
+		end
 
           if screenName == "ScreenGameplay" then
-						for player in ivalues(GAMESTATE:GetEnabledPlayers()) do
-							local pn = ToEnumShortString(player)
-							readyState[pn] = false
-						end
+			for player in ivalues(GAMESTATE:GetEnabledPlayers()) do
+				local pn = ToEnumShortString(player)
+				readyState[pn] = false
+			end
             -- Input callbacks get cleared out when we transition screens, so we don't need to worry about explicitly removing it.
             SCREENMAN:GetTopScreen():AddInputCallback(InputHandler)
             SCREENMAN:GetTopScreen():PauseGame(true)
-          end
+		elseif isWaiting then
+			SCREENMAN:GetTopScreen():AddInputCallback(InputHandler)
+
+		end
 
           MESSAGEMAN:Broadcast("UpdateMachineState")
+        end
+      end,
+      PlayerJoinedMessageCommand=function(self)
+				if self.connected and self.socket ~= nil and self.inLobby then	
+          local request = CreateRequest("updateMachine", GetMachineState())
+          self.socket:Send(request)
+        end
+      end,
+      PlayerUnjoinedMessageCommand=function(self)
+				if self.connected and self.socket ~= nil and self.inLobby then	
+          local request = CreateRequest("updateMachine", GetMachineState())
+          self.socket:Send(request)
         end
       end,
       UpdateMachineStateMessageCommand=function(self)
@@ -483,7 +591,7 @@ CreateOnlineHandler = function()
         if self.connected and self.socket ~= nil then
 				self.inLobby = false
           local data = GetMachineState()
-          data.code = params.code and params.code or roomCode
+          data.code = params.code and params.code
           data.password = params.password and params.password or ""
           local request = CreateRequest("joinLobby", data)
           self.socket:Send(request)
@@ -530,8 +638,11 @@ CreateOnlineHandler = function()
         Name="Display",
         InitCommand=function(self)
           self:visible(false)
-        end,
 
+					local width = 200
+					local LEFT = width/2
+					self:xy(LEFT, _screen.cy)
+        end,
         UpdateTextCommand=function(self, params)
           local screen = SCREENMAN:GetTopScreen()
           local screenName = screen and screen:GetName() or "NoScreen"
@@ -547,10 +658,6 @@ CreateOnlineHandler = function()
 
           -- If we're on a different screen, we'll just retain the last position.
           if screenName == "ScreenSelectMusic" then
-            local p1Joined = GAMESTATE:IsSideJoined("PlayerNumber_P1")
-            local p2Joined = GAMESTATE:IsSideJoined("PlayerNumber_P2")
-
-            -- If both are joined then push it to the left so keep it out of the way.
             self:xy(LEFT, _screen.cy)
             bg:zoomto(width, height)
           elseif screenName == "ScreenEvaluationStage" or screenName == "ScreenGameplay" then
@@ -575,15 +682,19 @@ CreateOnlineHandler = function()
         Def.Quad{
           Name="Background",
           InitCommand=function(self)
-            self:zoomto(SCREEN_WIDTH / 3, SCREEN_HEIGHT):diffuse(0, 0, 0, 0.5):y(_screen.cy)
+            self:zoomto(SCREEN_WIDTH / 3, SCREEN_HEIGHT):diffuse(0, 0, 0, 0.5)
           end,
         },
 
         LoadFont("Common Normal").. {
           Name="Text",
           Text="",
+          InitCommand=function(self)
+            self:diffuse(Color.Yellow)
+          end,
           ResizeCommand=function(self, params)
             self:settext(params.text)
+            DiffuseEmojis(self)
             -- We don't want text to be cut off.
             -- Incrementally adjust the zoom while checking the width until it fits.
             -- Not the prettiest solution but it works.

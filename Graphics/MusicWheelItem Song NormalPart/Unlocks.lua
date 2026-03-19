@@ -15,6 +15,11 @@ local af = Def.ActorFrame {
     Def.Sprite{
         InitCommand=function(self)
             self:animate(false):visible(false)
+            if player == PLAYER_1 then
+                self:diffuse(Color.Yellow)
+            else
+                self:diffuse(Color.Orange)
+            end
             if #GAMESTATE:GetHumanPlayers() > 1 then
                 self:x(-12)
             else
@@ -23,14 +28,23 @@ local af = Def.ActorFrame {
             self:Load( THEME:GetPathG("", "lock.png") )
         end,
         SetCommand=function(self, params)
+            -- Don't display anything if the player isn't even enabled.
+            if not GAMESTATE:IsPlayerEnabled(player) then
+                self:visible(false)
+                return
+            end
+
             if params.Song then
                 local song = params.Song
                 local song_dir = song:GetSongDir()
+                -- Only take the <song> parth of /Songs/<pack>/<song>/
+                local song_folder = song_dir:gsub("[/\\]+$", ""):match("([^/\\]+)$") or song_dir
 
                 local year = 2026
                 if string.find(string.lower(song_dir), "itl online "..year.." unlocks") then
-                    local unlockData = SL[pn].ITLData["unlockFolders"][song_dir] or {}
-                    self:visible(unlockData[song_dir] or false)
+                    local unlockData = SL[pn].ITLData["unlockFolders"] or {}
+                    local songUnlocked = (unlockData[song_folder]==true)
+                    self:visible(not songUnlocked)
                 else
                     self:visible(false)
                 end
