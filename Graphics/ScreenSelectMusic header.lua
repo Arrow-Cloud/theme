@@ -17,7 +17,7 @@ local SecondsToHMMSS = SecondsToHMMSS or function(s)
 end
 
 local UpdateTimer = function(af, dt)
-	local seconds = GetTimeSinceStart() - SL.Global.TimeAtSessionStart
+	local seconds = GetTimeSinceStart() - (SL.Global.TimeAtSessionStart or GetTimeSinceStart())
 	local totalTime = 0
 	local anyPlayer = "P1"
 	if #SL["P1"].Stages.Stats == 0 then anyPlayer = "P2" end

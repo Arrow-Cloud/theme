@@ -4,7 +4,7 @@ IsItlSong = function(player)
 	local song_dir = song:GetSongDir()
 	local group = string.lower(song:GetGroupName())
 	local pn = ToEnumShortString(player)
-	return string.find(group, "itl online 2025") or string.find(group, "itl 2025") or SL[pn].ITLData["pathMap"][song_dir] ~= nil
+	return string.find(group, "itl online 2026") or string.find(group, "itl 2026") or SL[pn].ITLData["pathMap"][song_dir] ~= nil
 end
 
 UpdatePathMap = function(player, hash)
@@ -40,7 +40,7 @@ end
 
 
 -- -----------------------------------------------------------------------
--- The ITL file is a JSON file that contains two mappings:
+-- The ITL file is a JSON file that contains three mappings:
 --
 -- {
 --    pathMap = {
@@ -48,6 +48,9 @@ end
 --    },
 --    hashMap = {
 --      '<song_hash': { ..itl metadata .. }
+--    }
+--    unlockFolders = {
+--      '<song_dir>': true
 --    }
 -- }
 --
@@ -57,7 +60,7 @@ end
 -- This set up lets us display song wheel grades for ITL both from playing within the
 -- ITL pack and also outside of it.
 -- Note that songs resynced for ITL but played outside of the pack will not be covered in the pathMap.
-local itlFilePath = "itl2025.json"
+local itlFilePath = "ITL2026.json"
 
 local TableContainsData = function(t)
 	if t == nil then return false end
@@ -73,7 +76,8 @@ WriteItlFile = function(player)
 	local pn = ToEnumShortString(player)
 	-- No data to write, return early.
 	if (not TableContainsData(SL[pn].ITLData["pathMap"]) and
-			not TableContainsData(SL[pn].ITLData["hashMap"])) then
+			not TableContainsData(SL[pn].ITLData["hashMap"]) and
+			not TableContainsData(SL[pn].ITLData["unlockFolders"])) then
 		return
 	end
 
@@ -113,6 +117,7 @@ ReadItlFile = function(player)
 	local itlData = { 
 		["pathMap"] = {},
 		["hashMap"] = {},
+		["unlockFolders"] = {},
 	}
 	if FILEMAN:DoesFileExist(path) then
 		local f = RageFileUtil:CreateRageFile()
@@ -127,6 +132,14 @@ ReadItlFile = function(player)
 
 	SL[pn].ITLData = itlData
 	CalculateITLSongRanks(player)
+end
+
+UpdateItlUnlocks = function(player, downloadFolders)
+	local pn = ToEnumShortString(player)
+	local unlockFolders = SL[pn].ITLData["unlockFolders"]
+	for folder in ivalues(downloadFolders) do
+		unlockFolders[folder] = true
+	end
 end
 
 -- EX score is a number like 92.67
@@ -494,7 +507,7 @@ UpdateItlData = function(player)
 		
 	-- Do the same validation as GrooveStats.
 	-- This checks important things like timing windows, addition/removal of arrows, etc.
-	local _, valid = ValidForGrooveStats(player)
+	local _, valid, _ = ValidForGrooveStats(player)
 
 	-- ITL additionally requires the music rate to be 1.00x.
 	local so = GAMESTATE:GetSongOptionsObject("ModsLevel_Song")

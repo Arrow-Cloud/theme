@@ -1,4 +1,4 @@
- -- get the machine_profile now at file init; no need to keep fetching with each SetCommand
+-- get the machine_profile now at file init; no need to keep fetching with each SetCommand
 local machine_profile = PROFILEMAN:GetMachineProfile()
 
 -- the height of the footer is defined in ./Graphics/_footer.lua, but we'll
@@ -61,6 +61,9 @@ local GetMachineTag = function(gsEntry)
 end
 
 local GetScoresRequestProcessor = function(res, params)
+	local screen = SCREENMAN:GetTopScreen()
+	if not screen or screen:GetName() ~= "ScreenSelectMusic" then return end
+
 	local master = params.master
 	if master == nil then return end
 	-- If we're not hovering over a song when we get the request, then we don't
@@ -388,7 +391,7 @@ af[#af+1] = RequestResponseActor(17, 50)..{
 				GetScoresRequestProcessor(res, params)
 			else
 				self:playcommand("MakeGrooveStatsRequest", {
-					endpoint="player-scores.php?"..NETWORK:EncodeQueryParameters(query),
+					endpoint="?action=playerScores&"..NETWORK:EncodeQueryParameters(query),
 					method="GET",
 					headers=headers,
 					timeout=10,

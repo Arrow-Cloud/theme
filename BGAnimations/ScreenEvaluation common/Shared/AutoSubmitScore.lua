@@ -92,6 +92,9 @@ local AttemptDownloads = function(res)
 	for i=1,2 do
 		local playerStr = "player"..i
 		local events = {"rpg", "itl"}
+		local player = "PlayerNumber_P"..i
+		local itlDownloadsFound = false
+
 
 		for event in ivalues(events) do
 			if data and data[playerStr] and data[playerStr][event] then
@@ -110,7 +113,6 @@ local AttemptDownloads = function(res)
 
 							if ThemePrefs.Get("SeparateUnlocksByPlayer") then
 								local profileName = "NoName"
-								local player = "PlayerNumber_P"..i
 								if (PROFILEMAN:IsPersistentProfile(player) and
 										PROFILEMAN:GetProfile(player)) then
 									profileName = PROFILEMAN:GetProfile(player):GetDisplayName()
@@ -350,6 +352,26 @@ local AutoSubmitRequestProcessor = function(res, overlay)
 						local eventAf = overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):GetChild("P"..i.."EventAf")
 						eventAf:playcommand("Show", {data=data[playerStr]})
 						shouldDisplayOverlay = true
+
+						if data[playerStr]["itl"] then
+							-- Check for downloadFolders
+							local itlData = data[playerStr]["itl"]
+							if itlData["progress"] and itlData["progress"]["questsCompleted"] then
+								local quests = itlData["progress"]["questsCompleted"]
+								local hasDownloadFolders = false
+								for quest in ivalues(quests) do
+									if quest["songDownloadFolders"] then
+										local downloadFolders = quest["songDownloadFolders"]
+										UpdateItlUnlocks("PlayerNumber_P"..side, downloadFolders)
+										hasDownloadFolders = true
+									end
+								end
+								if hasDownloadFolders then
+									-- Write out the file if we found any download unlocks.
+									WriteItlFile("PlayerNumber_P"..side)
+								end
+							end
+						end
 					end
 
 					-- Only update PB/WR messages on the side that is joined
@@ -512,7 +534,7 @@ local af = Def.ActorFrame {
 				local pn = ToEnumShortString(player)
 
 				if GAMESTATE:IsHumanPlayer(player) and GAMESTATE:IsSideJoined(player) then
-					local _, valid = ValidForGrooveStats(player)
+					local _, valid, _ = ValidForGrooveStats(player)
 					local stats = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
 					local submitForPlayer = false
 
@@ -536,6 +558,7 @@ local af = Def.ActorFrame {
 								rescoreCounts=GetRescoredJudgmentCounts(player),
 								usedCmod=(GAMESTATE:GetPlayerState(pn):GetPlayerOptions("ModsLevel_Preferred"):CMod() ~= nil),
 								comment=CreateCommentString(player),
+								playerOptions=GetPlayerOptionsJsonForGrooveStats(player),
 							}
 							sendRequest = true
 							submitForPlayer = true
@@ -554,18 +577,18 @@ local af = Def.ActorFrame {
 			-- Only send the request if it's applicable.
 			if sendRequest then
 				-- Unjoined players won't have the text displayed.
-             
-                self:GetParent():GetChild("P1SubmitText"):settext(THEME:GetString("GrooveStats", "Submitting"))
+
+				self:GetParent():GetChild("P1SubmitText"):settext(THEME:GetString("GrooveStats", "Submitting"))
 				self:GetParent():GetChild("P2SubmitText"):settext(THEME:GetString("GrooveStats", "Submitting"))
 					
 				self:playcommand("MakeGrooveStatsRequest", {
-					endpoint="score-submit.php?"..NETWORK:EncodeQueryParameters(query),
+					endpoint="?action=scoreSubmit&"..NETWORK:EncodeQueryParameters(query),
 					method="POST",
 					headers=headers,
 					body=JsonEncode(body),
 					timeout=30,
 					callback=AutoSubmitRequestProcessor,
-				args=SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common"),
+					args=SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common"),
 				})
 			end
 		end

@@ -403,7 +403,7 @@ local NewSessionRequestProcessor = function(res, gsInfo)
 	local easter_eggs = PREFSMAN:GetPreference("EasterEggs")
 	local game = GAMESTATE:GetCurrentGame():GetName()
 	local style = ThemePrefs.Get("VisualStyle")
-	if events ~= nil and easter_eggs and game == "dance" then
+	if events ~= nil and easter_eggs and (game == "dance" or game == "pump") then
 		local last_active_event = ThemePrefs.Get("LastActiveEvent")
 
 		for event in ivalues(events) do
@@ -551,7 +551,7 @@ t[#t+1] = Def.ActorFrame{
 				SL.GrooveStats.Leaderboard = false
 				SL.GrooveStats.AutoSubmit = false
 				self:playcommand("MakeGrooveStatsRequest", {
-					endpoint="new-session.php?chartHashVersion="..SL.GrooveStats.ChartHashVersion,
+					endpoint="?action=newSession&chartHashVersion="..SL.GrooveStats.ChartHashVersion,
 					method="GET",
 					timeout=10,
 					callback=NewSessionRequestProcessor,
@@ -565,6 +565,13 @@ t[#t+1] = Def.ActorFrame{
 -- -----------------------------------------------------------------------
 -- Loads the UnlocksCache from disk for SRPG unlocks.
 LoadUnlocksCache()
+
+-- -----------------------------------------------------------------------
+-- Online Lobby Handler
+-- We only want one global instance of this, so we create it once but
+-- can get the same instance of the actor multiple times.
+
+t[#t+1] = CreateOnlineHandler()
 
 -- -----------------------------------------------------------------------
 -- SystemMessage stuff.

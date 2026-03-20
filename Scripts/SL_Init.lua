@@ -11,6 +11,7 @@ local PlayerDefaults = {
 				ComboFont = "Wendy",
 				HoldJudgment = "Love 1x2 (doubleres).png",
 				NoteSkin = nil,
+				NoteSkinVariant = nil,
 				Mini = "0%",
 				Spacing = "0%",
 				BackgroundFilter = 0,
@@ -27,8 +28,9 @@ local PlayerDefaults = {
 				ColumnFlashOnMiss = false,
 				SubtractiveScoring = false,
 				MeasureCounter = "None",
-				MeasureCounterLeft = true,
-				MeasureCounterUp = false,
+				MeasureCounterLeft = false,
+				MeasureCounterUp = true,
+				HideLookahead = false,
 				MeasureLines = "Off",
 				DataVisualizations = "None",
 				StepStatsExtra = "None",
@@ -40,7 +42,7 @@ local PlayerDefaults = {
 				NPSGraphAtTop = false,
 				JudgmentTilt = false,
 				TiltMultiplier = 1,
-				ColumnCues = false,
+				ColumnCues = true,
 				ColumnCountdown = false,
 				ShowHeldMiss = false,
 				DisplayScorebox = true,
@@ -122,6 +124,7 @@ local PlayerDefaults = {
 			self.ITLData = {
 				["pathMap"] = {},
 				["hashMap"] = {},
+				["unlockFolders"] = {},
 			}
 
 			-- default panes to intialize ScreenEvaluation to
@@ -180,9 +183,19 @@ local GlobalDefaults = {
 			self.TimeAtSessionStart = nil
 			self.SampleMusicLoops = ThemePrefs.Get("SampleMusicLoops")
 
+			-- Is the music wheel locked? Useful when loading overlay screens
+			self.MusicWheelLocked = false
+			
 			self.GameplayReloadCheck = false
 			-- How long to wait before displaying a "cue"
 			self.ColumnCueMinTime = 1.5
+
+			-- TODO(teejusb): We should only initialize this once to save on compute.
+			self.GrooveStatsPlayerOptionKeys = CreateGrooveStatsPlayerOptionKeys()
+
+			-- used to track active OptionRow index when navigating the Operator Menu's many screens and sub-screens
+			-- shaped like: { ScreenOptionsService=3, ScreenVisualOptions=1 }
+			self.PrevScreenOptionsServiceRow = {}
 		end,
 
 		-- These values outside initialize() won't be reset each game cycle,
@@ -370,7 +383,7 @@ SL = {
 			PercentScoreWeightW5=0,
 			PercentScoreWeightMiss=0,
 			PercentScoreWeightLetGo=0,
-			PercentScoreWeightHeld=IsGame("pump") and 0 or 3,
+			PercentScoreWeightHeld=3,
 			PercentScoreWeightHitMine=-1,
 			PercentScoreWeightCheckpointHit=0,
 
@@ -381,7 +394,7 @@ SL = {
 			GradeWeightW5=0,
 			GradeWeightMiss=0,
 			GradeWeightLetGo=0,
-			GradeWeightHeld=IsGame("pump") and 0 or 3,
+			GradeWeightHeld=3,
 			GradeWeightHitMine=-1,
 			GradeWeightCheckpointHit=0,
 
@@ -405,7 +418,7 @@ SL = {
 			PercentScoreWeightW5=-6,
 			PercentScoreWeightMiss=-12,
 			PercentScoreWeightLetGo=0,
-			PercentScoreWeightHeld=IsGame("pump") and 0 or 5,
+			PercentScoreWeightHeld=5,
 			PercentScoreWeightHitMine=-6,
 			PercentScoreWeightCheckpointHit=0,
 
@@ -416,7 +429,7 @@ SL = {
 			GradeWeightW5=-6,
 			GradeWeightMiss=-12,
 			GradeWeightLetGo=0,
-			GradeWeightHeld=IsGame("pump") and 0 or 5,
+			GradeWeightHeld=5,
 			GradeWeightHitMine=-6,
 			GradeWeightCheckpointHit=0,
 
@@ -426,8 +439,8 @@ SL = {
 			LifePercentChangeW4=0.000,
 			LifePercentChangeW5=-0.050,
 			LifePercentChangeMiss=-0.100,
-			LifePercentChangeLetGo=IsGame("pump") and 0.000 or -0.080,
-			LifePercentChangeHeld=IsGame("pump") and 0.000 or 0.008,
+			LifePercentChangeLetGo=-0.080,
+			LifePercentChangeHeld=0.008,
 			LifePercentChangeHitMine=-0.050,
 
 			InitialValue=0.5,
@@ -440,7 +453,7 @@ SL = {
 			PercentScoreWeightW5=0,
 			PercentScoreWeightMiss=-12,
 			PercentScoreWeightLetGo=0,
-			PercentScoreWeightHeld=IsGame("pump") and 0 or 5,
+			PercentScoreWeightHeld=5,
 			PercentScoreWeightHitMine=-6,
 			PercentScoreWeightCheckpointHit=0,
 
@@ -451,7 +464,7 @@ SL = {
 			GradeWeightW5=0,
 			GradeWeightMiss=-12,
 			GradeWeightLetGo=0,
-			GradeWeightHeld=IsGame("pump") and 0 or 5,
+			GradeWeightHeld=5,
 			GradeWeightHitMine=-6,
 			GradeWeightCheckpointHit=0,
 
@@ -461,8 +474,8 @@ SL = {
 			LifePercentChangeW4=0.004,
 			LifePercentChangeW5=0,
 			LifePercentChangeMiss=-0.1,
-			LifePercentChangeLetGo=IsGame("pump") and 0.000 or -0.080,
-			LifePercentChangeHeld=IsGame("pump") and 0.000 or 0.008,
+			LifePercentChangeLetGo=-0.080,
+			LifePercentChangeHeld=0.008,
 			LifePercentChangeHitMine=-0.05,
 
 			InitialValue=0.5,
@@ -545,7 +558,11 @@ SL = {
 	--              (either success or failure).
 	-- If a request fails, there will be another key:
 	--    ErrorMessage: string, the reasoning for the failure.
-	Downloads = {}
+	Downloads = {},
+
+	-- Latest versions available for ITGmania and Simply Love.
+	ITGmaniaLatestVersion = nil,
+	SimplyLoveLatestVersion = nil,
 }
 
 -- Restore preserved ArrowCloud config (if any) or ensure a default table.

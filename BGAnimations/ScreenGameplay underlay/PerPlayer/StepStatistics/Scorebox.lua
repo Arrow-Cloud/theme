@@ -56,7 +56,9 @@ local self_color = color("#a1ff94")
 local rival_color = color("#c29cff")
 
 local loop_seconds = 5
-local transition_seconds = 1
+local transition_seconds = 0.5
+local anim_seconds = transition_seconds
+local pendingRequests = 0
 
 local all_data = {}
 
@@ -93,7 +95,8 @@ ResetAllData()
 -- Checks to see if any data is available.
 local hideGrooveStats = ThemePrefs.Get("HideGrooveStats")
 local HasData = function(idx)
-	if hideGrooveStats and idx <= 3 then return false end
+	-- idx 3 is ITL, which should still be shown even if GrooveStats is hidden
+	if hideGrooveStats and idx <= 2 then return false end
 	return all_data[idx+1] and all_data[idx+1].has_data
 end
 
@@ -192,7 +195,8 @@ local LeaderboardRequestProcessor = function(res, master)
 			text = "Failed to Load 😞"
 		end
 		SetScoreData(1, 1, "", text, "", false, false, false, false)
-		if master ~= nil then
+		pendingRequests = pendingRequests - 1
+		if pendingRequests <= 0 and master ~= nil then
 			master:queuecommand("CheckScorebox")
 		end
 		return
@@ -395,7 +399,8 @@ local LeaderboardRequestProcessor = function(res, master)
 			end
 		end
  	end
-	if master ~= nil then
+	pendingRequests = pendingRequests - 1
+	if pendingRequests <= 0 and master ~= nil then
 		master:queuecommand("CheckScorebox")
 	end
 end
@@ -425,6 +430,9 @@ local af = Def.ActorFrame{
 	end,
 	LoopScoreboxCommand=function(self)
 		if #all_data == 0 then return end
+
+		-- On first display, use zero animation time so content appears instantly.
+		anim_seconds = self.isFirst and 0 or transition_seconds
 
 		local start = cur_style
 
@@ -486,6 +494,11 @@ local af = Def.ActorFrame{
 			local acHash = (SL[pn] and SL[pn].Streams and SL[pn].Streams.Hash and #SL[pn].Streams.Hash > 0) or false
 			local willDoArrowCloud = acEnabled and acKey and acHash
 
+			-- Count pending requests so we only show the scorebox once all responses arrive.
+			pendingRequests = 0
+			if willDoArrowCloud then pendingRequests = pendingRequests + 1 end
+			if sendRequest then pendingRequests = pendingRequests + 1 end
+
 			if willDoArrowCloud then
 				local ach = SL[pn].Streams.Hash
 				local acHeaders = { Authorization = "Bearer " .. SL[pn].ArrowCloudApiKey }
@@ -497,7 +510,10 @@ local af = Def.ActorFrame{
 					transferTimeout = SL.ArrowCloud.RequestTimeout,
 					onResponse = function(acres)
 						ArrowCloudRequestProcessor(acres)
-						self:GetParent():queuecommand("CheckScorebox")
+						pendingRequests = pendingRequests - 1
+						if pendingRequests <= 0 then
+							self:GetParent():queuecommand("CheckScorebox")
+						end
 					end
 				}
 			end
@@ -520,7 +536,7 @@ local af = Def.ActorFrame{
 					end
 				end
 				self:playcommand("MakeGrooveStatsRequest", {
-					endpoint="player-leaderboards.php?"..NETWORK:EncodeQueryParameters(query),
+					endpoint="?action=playerLeaderboards&"..NETWORK:EncodeQueryParameters(query),
 					method="GET",
 					headers=headers,
 					timeout=10,
@@ -538,7 +554,7 @@ local af = Def.ActorFrame{
 			self:diffuse(GrooveStatsBlue):setsize(width + border, height + border)
 		end,
 		LoopScoreboxCommand=function(self)
-			self:linear(transition_seconds):diffuse(style_color[cur_style])
+			self:linear(anim_seconds):diffuse(style_color[cur_style])
 		end
 	},
 	-- Main body
@@ -563,9 +579,9 @@ local af = Def.ActorFrame{
 		end,
 		LoopScoreboxCommand=function(self)
 			if cur_style == 0 or cur_style == 1 then
-				self:sleep(transition_seconds/2):linear(transition_seconds/2):diffusealpha(0.5)
+				self:sleep(anim_seconds/2):linear(anim_seconds/2):diffusealpha(0.5)
 			else
-				self:linear(transition_seconds/2):diffusealpha(0)
+				self:linear(anim_seconds/2):diffusealpha(0)
 			end
 		end
 	},
@@ -578,9 +594,9 @@ local af = Def.ActorFrame{
 		end,
 		LoopScoreboxCommand=function(self)
 			if (cur_style == 1 and not SL["P"..n].ActiveModifiers.ShowExScore) or (cur_style == 0 and SL["P"..n].ActiveModifiers.ShowExScore) then
-				self:sleep(transition_seconds/2):linear(transition_seconds/2):diffusealpha(0.3)
+				self:sleep(anim_seconds/2):linear(anim_seconds/2):diffusealpha(0.3)
 			else
-				self:linear(transition_seconds/2):diffusealpha(0)
+				self:linear(anim_seconds/2):diffusealpha(0)
 			end
 		end
 	},
@@ -593,9 +609,9 @@ local af = Def.ActorFrame{
 		end,
 		LoopScoreboxCommand=function(self)
 			if cur_style == 2 then
-				self:linear(transition_seconds/2):diffusealpha(0.5)
+				self:linear(anim_seconds/2):diffusealpha(0.5)
 			else
-				self:sleep(transition_seconds/2):linear(transition_seconds/2):diffusealpha(0)
+				self:sleep(anim_seconds/2):linear(anim_seconds/2):diffusealpha(0)
 			end
 		end
 	},
@@ -608,9 +624,9 @@ local af = Def.ActorFrame{
 		end,
 		LoopScoreboxCommand=function(self)
 			if cur_style == 3 then
-				self:linear(transition_seconds/2):diffusealpha(0.2)
+				self:linear(anim_seconds/2):diffusealpha(0.2)
 			else
-				self:sleep(transition_seconds/2):linear(transition_seconds/2):diffusealpha(0)
+				self:sleep(anim_seconds/2):linear(anim_seconds/2):diffusealpha(0)
 			end
 		end
 	},
@@ -624,9 +640,9 @@ local af = Def.ActorFrame{
 		end,
 		LoopScoreboxCommand=function(self)
 			if cur_style >= 4 then
-				self:sleep(transition_seconds/2):linear(transition_seconds/2):diffusealpha(0.25)
+				self:sleep(anim_seconds/2):linear(anim_seconds/2):diffusealpha(0.25)
 			else
-				self:linear(transition_seconds/2):diffusealpha(0)
+				self:linear(anim_seconds/2):diffusealpha(0)
 			end
 		end
 	},
@@ -653,9 +669,9 @@ local af = Def.ActorFrame{
 					self:diffuse(SL.JudgmentColors["FA+"][7])
 				end
 				self:settext(label)
-				self:sleep(transition_seconds/2):linear(transition_seconds/2):diffusealpha(0.65)
+				self:sleep(anim_seconds/2):linear(anim_seconds/2):diffusealpha(0.65)
 			else
-				self:linear(transition_seconds/2):diffusealpha(0)
+				self:linear(anim_seconds/2):diffusealpha(0)
 			end
 		end
 	},
@@ -674,7 +690,7 @@ for i=1,NumEntries do
 				self:zoom(CrownZoomForStyle(0)):xy(-width/2 + 14, y):diffusealpha(0)
 			end,
 			LoopScoreboxCommand=function(self)
-				self:linear(transition_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
+				self:linear(anim_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
 			end,
 			SetScoreboxCommand=function(self)
 				local displayRows = RowsForStyle(cur_style)
@@ -684,7 +700,7 @@ for i=1,NumEntries do
 				self:y(yy):zoom(CrownZoomForStyle(cur_style)):visible(true)
 				local score = all_data[cur_style+1]["scores"][i]
 				if score.rank ~= "" then
-					self:linear(transition_seconds/2):diffusealpha(1)
+					self:linear(anim_seconds/2):diffusealpha(1)
 				else
 					self:diffusealpha(0)
 				end
@@ -698,7 +714,7 @@ for i=1,NumEntries do
 				self:diffuse(Color.White):xy(-width/2 + 27, y):maxwidth(30):horizalign(right):zoom(zoom)
 			end,
 			LoopScoreboxCommand=function(self)
-				self:linear(transition_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
+				self:linear(anim_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
 			end,
 			SetScoreboxCommand=function(self)
 				local displayRows = RowsForStyle(cur_style)
@@ -714,7 +730,7 @@ for i=1,NumEntries do
 					clr = rival_color
 				end
 				self:settext(score.rank)
-				self:linear(transition_seconds/2):diffusealpha(1):diffuse(clr)
+				self:linear(anim_seconds/2):diffusealpha(1):diffuse(clr)
 			end
 		}
 	end
@@ -726,7 +742,7 @@ for i=1,NumEntries do
 			self:diffuse(Color.White):xy(-width/2 + 30, y):maxwidth(100):horizalign(left):zoom(zoom)
 		end,
 		LoopScoreboxCommand=function(self)
-			self:linear(transition_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
+			self:linear(anim_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
 		end,
 		SetScoreboxCommand=function(self)
 			local displayRows = RowsForStyle(cur_style)
@@ -742,7 +758,7 @@ for i=1,NumEntries do
 				clr = rival_color
 			end
 			self:settext(score.name)
-			self:linear(transition_seconds/2):diffusealpha(1):diffuse(clr)
+			self:linear(anim_seconds/2):diffusealpha(1):diffuse(clr)
 		end
 	}
 
@@ -753,7 +769,7 @@ for i=1,NumEntries do
 			self:diffuse(Color.White):xy(-width/2 + 160, y):horizalign(right):zoom(zoom)
 		end,
 		LoopScoreboxCommand=function(self)
-			self:linear(transition_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
+			self:linear(anim_seconds/2):diffusealpha(0):queuecommand("SetScorebox")
 		end,
 		SetScoreboxCommand=function(self)
 			local displayRows = RowsForStyle(cur_style)
@@ -777,7 +793,7 @@ for i=1,NumEntries do
 				clr = rival_color
 			end
 			self:settext(score.score)
-			self:linear(transition_seconds/2):diffusealpha(1):diffuse(clr)
+			self:linear(anim_seconds/2):diffusealpha(1):diffuse(clr)
 		end
 	}
 end
