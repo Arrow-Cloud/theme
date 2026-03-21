@@ -36,6 +36,7 @@ end
 return Def.Actor{
 	OnCommand=function(self)
 		local underlay = SCREENMAN:GetTopScreen():GetChild("Underlay")
+		if not underlay then return end
 		p1_score = underlay:GetChild("P1Score")
 		p2_score = underlay:GetChild("P2Score")
 	end,

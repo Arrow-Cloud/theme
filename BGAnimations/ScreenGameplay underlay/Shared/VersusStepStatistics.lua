@@ -1,6 +1,5 @@
 local Players = GAMESTATE:GetHumanPlayers()
 local IsUltraWide = (GetScreenAspectRatio() > 21/9)
-local FilterAlpha = BackgroundFilterValues()
 
 local ShouldDisplayStatsForPlayer = function(player)
     local pn = ToEnumShortString(player)
@@ -32,7 +31,7 @@ local determineFilterAlphas = function()
     local alphas = {}
     for player in ivalues(Players) do
         local pn = ToEnumShortString(player)
-        alphas[player] = clamp(FilterAlpha[SL[pn].ActiveModifiers.BackgroundFilter]/100 or 0, 0.25, 0.9)
+        alphas[player] = clamp((SL[pn].ActiveModifiers.BackgroundFilter or 0)/100, 0.25, 0.9)
     end
     return alphas
 end
