@@ -8,7 +8,7 @@ GrooveStatsURL = function()
 	local boogie = ThemePrefs.Get("EnableBoogieStats")
 	if not FILEMAN:DoesFileExist(uat) then 
 		if boogie and string.find(PREFSMAN:GetPreference("HttpAllowHosts"), "boogiestats.andr.host") then url_prefix = "https://boogiestats.andr.host/" 
-		else url_prefix = "https://api.groovestats.com/" end
+		else url_prefix = "https://apiservice.groovestats.com/api/" end
 	else
 		url_prefix = "http://127.0.0.1:5000/"
 	end
@@ -58,7 +58,7 @@ end
 -- args: any, arguments that will be made accesible to the callback function. This
 --       can of any type as long as the callback knows what to do with it.
 RequestResponseActor = function(x, y)
-	local url_prefix = "https://apiservice.groovestats.com/api/"
+	local url_prefix = GrooveStatsURL()
 
 	return Def.ActorFrame{
 		InitCommand=function(self)
