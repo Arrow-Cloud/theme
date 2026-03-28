@@ -1898,18 +1898,13 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
         local hash = tostring(SL[pn].Streams.Hash)
         sendScoreData(data, apiKey, hash, player)
       else
-        if label then label:settext("❌ Arrow Cloud") end
+        if apiKey ~= nil and not eligibility.ok then
+          if label then label:settext("❌ Arrow Cloud") end
+          debugPrint("Skipping submission (ineligible)")
+        end
 
         if apiKey == nil or apiKey == "" then
           debugPrint("No API key configured for " .. pn)
-          local errLabel = (pn == "P1") and p1ErrMsg or p2ErrMsg
-          if errLabel then
-            errLabel:settext("Arrow Cloud API key not configured.")
-          end
-        end
-
-        if apiKey ~= nil and not eligibility.ok then
-          debugPrint("Skipping submission (ineligible)")
         end
       end
     end
@@ -2146,17 +2141,13 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
           sendScoreData(data, apiKey, hash, player)
         else
           local pn = ToEnumShortString(player)
-          local label = (pn == "P1") and p1Text or p2Text
-          if label then label:settext("❌ Arrow Cloud") end
+          if apiKey ~= nil and not eligibility.ok then
+            local label = (pn == "P1") and p1Text or p2Text
+            if label then label:settext("❌ Arrow Cloud") end
+            debugPrint("Skipping course submission (ineligible)")
+          end
           if apiKey == nil or apiKey == "" then
             debugPrint("No API key configured for " .. pn)
-            local errLabel = (pn == "P1") and p1ErrMsg or p2ErrMsg
-            if errLabel then
-              errLabel:settext("Arrow Cloud API key not configured.")
-            end
-          end
-          if apiKey ~= nil and not eligibility.ok then
-            debugPrint("Skipping course submission (ineligible)")
           end
         end
       end
