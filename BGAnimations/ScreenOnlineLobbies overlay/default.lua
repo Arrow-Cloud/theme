@@ -1,6 +1,6 @@
 local active_index = 0
 local list_selected = false
-local options = { "Available Lobbies", "Refresh List", "Create Lobby", "Go Back" }
+local options = { "Available Lobbies", "Refresh List", "Create Lobby", "Select Music" }
 local t = nil
 local connected = false
 local has_error = false
@@ -909,7 +909,7 @@ local af = Def.ActorFrame{
 			},
 
 			LoadFont("Common Bold")..{
-				Text="Go Back",
+				Text="Select Music",
 				InitCommand=function(self)
 					self:zoom(0.5)
 				end,
@@ -1125,7 +1125,7 @@ local af = Def.ActorFrame{
 				end
 			},
 			LoadFont("Common Bold")..{
-				Text="Go Back",
+				Text="Select Music",
 				InitCommand=function(self)
 					self:zoom(0.5)
 				end,

@@ -910,6 +910,15 @@ CreateGrooveStatsPlayerOptionKeys = function()
 				[17]="Shift 2x7 (doubleres).png",
 				[18]="Tactics 2x7 (doubleres).png",
 				[19]="Wendy 2x7 (doubleres).png",
+				-- Digital Dance
+				[100]="Chalk 2x7 (doubleres).png",
+				[101]="Digital 2x7 (doubleres).png",
+				[102]="Ice 2x7.png",
+				[103]="ITG2 HD 2x7 (doubleres).png",
+				[104]="Optimus Dark 2x7 (doubleres).png",
+				[105]="Powerpuff HD 2x7 (doubleres).png",
+				[106]="Reptilian 2x7 (doubleres).png",
+				[107]="TRON 2x7 (doubleres).png",
 		}),
 		["ComboFont"] = CreateKey("string", {
 			[1]="Arial Rounded",
@@ -925,6 +934,8 @@ CreateGrooveStatsPlayerOptionKeys = function()
 			[2]="Love 1x2 (doubleres).png",
 			[3]="mute 1x2 (doubleres).png",
 			[4]="None 1x2.png",
+			-- Digital Dance
+			[100]="Ice 1x2.png",
 		}),
 		["NoteSkin"] = CreateKey("string", {
 			[1]="cel",
@@ -978,6 +989,8 @@ CreateGrooveStatsPlayerOptionKeys = function()
 			[1]="Standard",
 			[2]="Surround",
 			[3]="Vertical",
+			-- Digital Dance
+			[100]="Top",
 		}),
 		["NPSGraphAtTop"] = CreateKey("boolean"),
 		["JudgmentTilt"] = CreateKey("boolean"),
