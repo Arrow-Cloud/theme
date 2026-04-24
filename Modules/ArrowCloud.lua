@@ -8,6 +8,9 @@ local ArrowCloud = {}
 
 -- Constants
 local BASE_URL = "https://api.arrowcloud.dance"
+local AUTH_CHECK_PATH = "/auth-check"
+local DEVICE_LOGIN_START_PATH = "/device-login/start"
+local DEVICE_LOGIN_POLL_PATH = "/device-login/poll"
 local MODULE_TAG = "[ArrowCloud-SLmodule]"
 local ENABLE_PENDING_SCORES = true -- Enable saving failed score submissions for retry when offline
 local MAX_PENDING_SCORES = 50      -- Maximum number of pending scores stored per player
@@ -408,13 +411,71 @@ local function printTable(t, indent)
   end
 end
 
+local function getPlayerIndex(player)
+  return (player == PLAYER_1) and 0 or 1
+end
+
+local function getPlayerProfilePath(player)
+  local profilePath = PROFILEMAN:GetProfileDir(getPlayerIndex(player))
+  if not profilePath or profilePath == "" then
+    return nil
+  end
+  return profilePath
+end
+
+local function getArrowCloudIniPath(player)
+  local profilePath = getPlayerProfilePath(player)
+  if not profilePath then
+    return nil
+  end
+  return profilePath .. "ArrowCloud.ini"
+end
+
+local function ensureArrowCloudIniExists(player)
+  local filePath = getArrowCloudIniPath(player)
+  if not filePath then
+    return nil
+  end
+
+  if not FILEMAN:DoesFileExist(filePath) then
+    IniFile.WriteFile(filePath, {
+      ["ArrowCloud"] = {
+        ["ApiKey"] = "",
+        ["AllowAutoplay"] = "0"
+      }
+    })
+  end
+  return filePath
+end
+
+local function writeApiKey(player, apiKey)
+  local filePath = ensureArrowCloudIniExists(player)
+  if not filePath then
+    return false, "Profile path unavailable"
+  end
+
+  local contents = IniFile.ReadFile(filePath) or {}
+  contents["ArrowCloud"] = contents["ArrowCloud"] or {}
+  contents["ArrowCloud"]["ApiKey"] = apiKey or ""
+  if contents["ArrowCloud"]["AllowAutoplay"] == nil then
+    contents["ArrowCloud"]["AllowAutoplay"] = "0"
+  end
+
+  IniFile.WriteFile(filePath, contents)
+  return true
+end
+
 -- Profile and API key management (returns table { apiKey, allowAutoplay })
 local function readApiKey(player)
   local playerIndex = (player == PLAYER_1) and 0 or 1
   local profilePath = PROFILEMAN:GetProfileDir(playerIndex)
-  local filePath = profilePath .. "ArrowCloud.ini"
+  local filePath = profilePath and (profilePath .. "ArrowCloud.ini") or nil
   local apiKey
   local allowAutoplay = false
+
+  if not filePath then
+    return { apiKey = nil, allowAutoplay = false }
+  end
 
   if not FILEMAN:DoesFileExist(filePath) then
     IniFile.WriteFile(filePath, {
@@ -546,6 +607,199 @@ end
 
 local function encodeJson(value)
   return encodeJsonValue(value)
+end
+
+local function redactSecrets(text)
+  if text == nil then
+    return ""
+  end
+  if type(text) ~= "string" then
+    text = tostring(text)
+  end
+
+  local redacted = text
+  redacted = redacted:gsub('("apiKey"%s*:%s*")([^"]*)(")', '%1[REDACTED]%3')
+  redacted = redacted:gsub('("pollToken"%s*:%s*")([^"]*)(")', '%1[REDACTED]%3')
+  redacted = redacted:gsub('("Authorization"%s*:%s*"Bearer%s+)([^"]+)(")', '%1[REDACTED]%3')
+  return redacted
+end
+
+local function summarizeBody(body, maxLen)
+  local safe = redactSecrets(body)
+  maxLen = maxLen or 280
+  if #safe > maxLen then
+    safe = safe:sub(1, maxLen) .. "..."
+  end
+  return safe
+end
+
+local function logHttpResponse(tag, response)
+  if type(response) ~= "table" then
+    debugPrint(tag .. " response=(non-table) " .. summarizeBody(response))
+    return
+  end
+
+  local status = response.statusCode
+  local err = response.error and ToEnumShortString(response.error) or "nil"
+  local bodySummary = summarizeBody(response.body)
+  debugPrint(tag .. " status=" .. tostring(status) .. " error=" .. tostring(err) .. " body=" .. bodySummary)
+end
+
+local function decodeJsonSafe(body)
+  if not body or type(body) ~= "string" or body == "" then
+    return nil
+  end
+  local ok, parsed = pcall(JsonDecode, body)
+  if ok and type(parsed) == "table" then
+    return parsed
+  end
+  return nil
+end
+
+local function isHttpOk(response)
+  if type(response) ~= "table" then
+    return false
+  end
+  local status = response.statusCode
+  return status ~= nil and status >= 200 and status < 300
+end
+
+local function requestAuthCheck(apiKey, onDone)
+  NETWORK:HttpRequest {
+    url = BASE_URL .. AUTH_CHECK_PATH,
+    method = "GET",
+    headers = {
+      ["Content-Type"] = "application/json",
+      ["Authorization"] = "Bearer " .. apiKey
+    },
+    connectTimeout = 8,
+    transferTimeout = 8,
+    onResponse = function(response)
+      logHttpResponse("AuthCheck", response)
+      if onDone then
+        onDone(response, isHttpOk(response), decodeJsonSafe(response and response.body))
+      end
+    end
+  }
+end
+
+local function requestDeviceLoginStart(payload, onDone)
+  NETWORK:HttpRequest {
+    url = BASE_URL .. DEVICE_LOGIN_START_PATH,
+    method = "POST",
+    body = encodeJson(payload or {}),
+    headers = {
+      ["Content-Type"] = "application/json"
+    },
+    connectTimeout = 8,
+    transferTimeout = 12,
+    onResponse = function(response)
+      logHttpResponse("DeviceLoginStart", response)
+      if onDone then
+        onDone(response, isHttpOk(response), decodeJsonSafe(response and response.body))
+      end
+    end
+  }
+end
+
+local function getMachineLabel()
+  local configured = PREFSMAN and PREFSMAN:GetPreference("MachineName") or ""
+  if configured and type(configured) == "string" and configured:gsub("%s+", "") ~= "" then
+    return configured
+  end
+  return "ITGMania Machine"
+end
+
+local function isEligibleQrLoginPlayer(player)
+  return player ~= nil
+    and GAMESTATE:IsHumanPlayer(player)
+    and GAMESTATE:IsSideJoined(player)
+    and PROFILEMAN:IsPersistentProfile(player)
+end
+
+local function hasAnyEligibleQrLoginPlayer()
+  for player in ivalues(GAMESTATE:GetHumanPlayers()) do
+    if isEligibleQrLoginPlayer(player) then
+      return true
+    end
+  end
+  return false
+end
+
+local qrencode_device_login = nil
+local function getQrEncoder()
+  if qrencode_device_login ~= nil then
+    return qrencode_device_login
+  end
+
+  local path = THEME:GetPathB("", "_modules/QR Code/qrencode.lua")
+  local chunk, err = loadfile(path)
+  if not chunk then
+    debugPrint("QR loadfile failed: " .. tostring(err))
+    return nil
+  end
+
+  local ok, module = pcall(chunk)
+  if not ok then
+    debugPrint("QR module execution failed: " .. tostring(module))
+    return nil
+  end
+
+  qrencode_device_login = module
+  return qrencode_device_login
+end
+
+local function buildQrVertices(url, size)
+  if not url or url == "" then
+    return nil, nil
+  end
+
+  local encoder = getQrEncoder()
+  if not encoder or not encoder.qrcode then
+    return nil, nil
+  end
+
+  local callOk, qrOk, modules = pcall(encoder.qrcode, url)
+  if not callOk or not qrOk or type(modules) ~= "table" then
+    debugPrint("QR encode failed for device-login URL (callOk=" .. tostring(callOk) .. ", qrOk=" .. tostring(qrOk) .. ", modulesType=" .. tostring(type(modules)) .. ")")
+    return nil, nil
+  end
+
+  local verts = {}
+  for c, column in ipairs(modules) do
+    for m, module in ipairs(column) do
+      local clr = (module > 0) and Color.Black or Color.White
+      table.insert(verts, { { m - 1, c - 1, 0 }, clr })
+      table.insert(verts, { { m, c - 1, 0 }, clr })
+      table.insert(verts, { { m, c, 0 }, clr })
+      table.insert(verts, { { m - 1, c, 0 }, clr })
+    end
+  end
+
+  local pixelSize = size / #modules
+  return verts, pixelSize
+end
+
+local function requestDeviceLoginPoll(sessionId, pollToken, onDone)
+  NETWORK:HttpRequest {
+    url = BASE_URL .. DEVICE_LOGIN_POLL_PATH,
+    method = "POST",
+    body = encodeJson({ sessionId = sessionId, pollToken = pollToken }),
+    headers = {
+      ["Content-Type"] = "application/json"
+    },
+    connectTimeout = 8,
+    transferTimeout = 10,
+    onResponse = function(response)
+      -- Keep poll logging concise and redacted to avoid leaking token/key material.
+      if not isHttpOk(response) then
+        logHttpResponse("DeviceLoginPoll", response)
+      end
+      if onDone then
+        onDone(response, isHttpOk(response), decodeJsonSafe(response and response.body))
+      end
+    end
+  }
 end
 
 -- Save a failed score submission for later retry.
@@ -2305,6 +2559,735 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
 
   -- dialog overlay used after submission
   createACDialogActor("ACDialog")
+}
+
+moduleRegistration["ScreenSelectMusic"] = Def.ActorFrame {
+  InitCommand = function(self)
+    self.modalOpen = false
+    self.sortMenuInjected = false
+    self.inputHandler = nil
+    self.sideStates = {}
+    self.activeSides = {}
+    self.pendingAuthChecks = 0
+    self.pendingStarts = 0
+    self.flowDone = false
+    self.runToken = 0
+    self.backoffs = { 3, 5, 8 }
+    self.lastHandledInputAt = {}
+    self.ignoreStartUntil = 0
+  end,
+  ModuleCommand = function(self)
+    self:playcommand("InstallSortMenuHook")
+    self:playcommand("DirectInputToEngine")
+    self:queuecommand("RefreshVisuals")
+    self:queuecommand("Tick")
+  end,
+  DirectInputToModalHandlerCommand = function(self)
+    local top = SCREENMAN:GetTopScreen()
+    if not top then return end
+
+    if self.inputHandler then
+      top:RemoveInputCallback(self.inputHandler)
+    end
+
+    self.inputHandler = function(event)
+      if not self.modalOpen then
+        return false
+      end
+
+      if not event then return false end
+
+      -- Some setups only surface release events here; treat any non-repeat as actionable.
+      local gbtn = event.GameButton
+      local rawButton = event.DeviceInput and event.DeviceInput.button or ""
+      local eventType = tostring(event.type)
+      if eventType ~= "InputEventType_Repeat" then
+        -- continue
+      else
+        return false
+      end
+
+      local actionKey = tostring(gbtn ~= nil and gbtn or rawButton)
+      local now = GetTimeSinceStart()
+
+      if gbtn == "Start" and now < (self.ignoreStartUntil or 0) then
+        return true
+      end
+
+      local lastHandled = self.lastHandledInputAt[actionKey]
+      if lastHandled and (now - lastHandled) < 0.12 then
+        return false
+      end
+
+      if gbtn == "Start" then
+        self.lastHandledInputAt[actionKey] = now
+        if self.flowDone then
+          self:playcommand("Leave", { sound = "Start" })
+          return true
+        end
+
+        -- Retry failed/unknown sides without touching already linked/success sides.
+        local needsRetry = false
+        for _, pn in ipairs(self.activeSides) do
+          local state = self.sideStates[pn]
+          if state and (state.status == "failure" or state.status == "unknown") then
+            state.status = "checking"
+            state.message = "Retrying key check..."
+            state.showQr = false
+            state.starting = false
+            state.polling = false
+            state.backoffIndex = 1
+            needsRetry = true
+          end
+        end
+        if needsRetry then
+          self.flowDone = false
+          local modal = self:GetChild("ACLoginModal")
+          local startSound = modal and modal:GetChild("StartSound") or nil
+          if startSound then startSound:play() end
+          self:playcommand("RunAuthChecks")
+          self:queuecommand("RefreshVisuals")
+        else
+          self:playcommand("Leave", { sound = "Start" })
+        end
+        return true
+      end
+
+      if (gbtn == "Back" or gbtn == "Select") or
+        (rawButton == "DeviceButton_escape" or rawButton == "DeviceButton_backspace") then
+        self.lastHandledInputAt[actionKey] = now
+        self:playcommand("Leave", { sound = "Cancel" })
+        return true
+      end
+
+      return false
+    end
+
+    top:AddInputCallback(self.inputHandler)
+  end,
+  CodeMessageCommand = function(self, params)
+    if not self.modalOpen or not params or not params.Name then
+      return
+    end
+
+    local name = tostring(params.Name):lower()
+    if name:find("back", 1, true) or name:find("cancel", 1, true) or name:find("escape", 1, true) then
+      self:playcommand("Leave", { sound = "Cancel" })
+    end
+  end,
+  DirectInputToACLoginCommand = function(self)
+    for player in ivalues(PlayerNumber) do
+      SCREENMAN:set_input_redirected(player, true)
+    end
+  end,
+  DirectInputToEngineCommand = function(self)
+    for player in ivalues(PlayerNumber) do
+      SCREENMAN:set_input_redirected(player, false)
+    end
+  end,
+  OffCommand = function(self)
+    local top = SCREENMAN:GetTopScreen()
+    if top and self.inputHandler then
+      top:RemoveInputCallback(self.inputHandler)
+    end
+    self.inputHandler = nil
+    self.modalOpen = false
+    self:playcommand("DirectInputToEngine")
+    self.runToken = self.runToken + 1
+  end,
+  InstallSortMenuHookCommand = function(self)
+    local top = SCREENMAN:GetTopScreen()
+    if not top or top:GetName() ~= "ScreenSelectMusic" then return end
+
+    local overlay = top:GetChild("Overlay")
+    local sortmenu = overlay and overlay:GetChild("SortMenu") or nil
+    if not sortmenu then
+      self:sleep(0.15):queuecommand("InstallSortMenuHook")
+      return
+    end
+
+    if sortmenu.custom_functions == nil then
+      sortmenu.custom_functions = {}
+    end
+
+    if not sortmenu.custom_functions["Login / Re-link"] then
+      sortmenu.custom_functions["Login / Re-link"] = function(event)
+        if not hasAnyEligibleQrLoginPlayer() then return end
+        local screen = SCREENMAN:GetTopScreen()
+        if not screen or screen:GetName() ~= "ScreenSelectMusic" then return end
+        local ov = screen:GetChild("Overlay")
+        if ov then
+          ov:queuecommand("DirectInputToEngine")
+        end
+        MESSAGEMAN:Broadcast("ACDeviceLoginOpen")
+      end
+    end
+
+    if sortmenu.wheel_options then
+      local existingIndex = nil
+      local insertAfterIndex = nil
+
+      for i = 1, #sortmenu.wheel_options do
+        local option = sortmenu.wheel_options[i]
+        if option and option[1] and option[1][1] == "ArrowCloud" and option[1][2] == "Login / Re-link" then
+          existingIndex = i
+          option[2] = hasAnyEligibleQrLoginPlayer
+        elseif option and option[1] and option[1][1] == "ArrowCloud" and option[1][2] == "ACLeaderboard" then
+          insertAfterIndex = i
+        elseif insertAfterIndex == nil and option and option[1] and option[1][1] == "NextPlease" and option[1][2] == "SwitchProfile" then
+          insertAfterIndex = i
+        end
+      end
+
+      local loginOption = existingIndex and sortmenu.wheel_options[existingIndex]
+        or { { "ArrowCloud", "Login / Re-link" }, hasAnyEligibleQrLoginPlayer }
+
+      if existingIndex ~= nil then
+        table.remove(sortmenu.wheel_options, existingIndex)
+        if insertAfterIndex ~= nil and existingIndex < insertAfterIndex then
+          insertAfterIndex = insertAfterIndex - 1
+        end
+      end
+
+      if insertAfterIndex ~= nil then
+        table.insert(sortmenu.wheel_options, insertAfterIndex + 1, loginOption)
+      else
+        table.insert(sortmenu.wheel_options, loginOption)
+      end
+    end
+  end,
+  ACDeviceLoginOpenMessageCommand = function(self)
+    if not hasAnyEligibleQrLoginPlayer() then
+      self.modalOpen = false
+      return
+    end
+
+    self.runToken = self.runToken + 1
+    self.modalOpen = true
+    self.lastHandledInputAt = {}
+    self.ignoreStartUntil = GetTimeSinceStart() + 0.35
+    self.flowDone = false
+    self.activeSides = {}
+    self.sideStates = {}
+    self.pendingAuthChecks = 0
+    self.pendingStarts = 0
+
+    for player in ivalues(GAMESTATE:GetHumanPlayers()) do
+      if isEligibleQrLoginPlayer(player) then
+        local pn = ToEnumShortString(player)
+        self.activeSides[#self.activeSides + 1] = pn
+        self.sideStates[pn] = {
+          player = player,
+          status = "checking",
+          message = "Checking existing key...",
+          showQr = false,
+          starting = false,
+          polling = false,
+          backoffIndex = 1,
+          nextPollAt = 0,
+        }
+      end
+    end
+
+    self:queuecommand("RefreshVisuals")
+    self:queuecommand("FinalizeOpen")
+  end,
+  FinalizeOpenCommand = function(self)
+    if not self.modalOpen then
+      return
+    end
+    self:playcommand("DirectInputToACLogin")
+    self:playcommand("DirectInputToModalHandler")
+    self:playcommand("RunAuthChecks")
+  end,
+  LeaveCommand = function(self, params)
+    self.runToken = self.runToken + 1
+    self.modalOpen = false
+    local soundName = params and params.sound or nil
+    if soundName ~= nil then
+      local modal = self:GetChild("ACLoginModal")
+      local soundActor = modal and modal:GetChild(soundName == "Start" and "StartSound" or "CancelSound") or nil
+      if soundActor then soundActor:play() end
+    end
+    self:playcommand("DirectInputToEngine")
+    self:queuecommand("RefreshVisuals")
+  end,
+  RunAuthChecksCommand = function(self)
+    local currentToken = self.runToken
+    self.pendingAuthChecks = 0
+
+    for _, pn in ipairs(self.activeSides) do
+      local side = self.sideStates[pn]
+      if side and side.status == "checking" then
+        local config = readApiKey(side.player)
+        local apiKey = config and config.apiKey or ""
+
+        if apiKey == nil or apiKey == "" then
+          side.status = "needs_login"
+          side.message = "No key configured"
+        else
+          side.message = "Validating key..."
+          self.pendingAuthChecks = self.pendingAuthChecks + 1
+          requestAuthCheck(apiKey, function(response, ok)
+            if self.runToken ~= currentToken then return end
+            self.pendingAuthChecks = math.max(0, self.pendingAuthChecks - 1)
+
+            if ok then
+              side.status = "already_linked"
+              side.message = "Already linked"
+            else
+              local code = response and response.statusCode or nil
+              local err = response and response.error and ToEnumShortString(response.error) or nil
+              if code == 401 or code == 403 then
+                side.status = "needs_login"
+                side.message = "Key invalid, login required"
+              elseif err == "Blocked" then
+                side.status = "unknown"
+                side.message = "Host blocked by HttpAllowHosts"
+              else
+                -- Network/transient errors should not hard-fail; allow login flow.
+                side.status = "needs_login"
+                side.message = "Check unavailable, proceeding to login"
+              end
+            end
+
+            if self.pendingAuthChecks == 0 then
+              self:playcommand("StartNeededSessions")
+            end
+            self:queuecommand("RefreshVisuals")
+          end)
+        end
+      end
+    end
+
+    if self.pendingAuthChecks == 0 then
+      self:playcommand("StartNeededSessions")
+      self:queuecommand("RefreshVisuals")
+    end
+  end,
+  StartNeededSessionsCommand = function(self)
+    local currentToken = self.runToken
+    local hasNeedsLogin = false
+    self.pendingStarts = 0
+
+    for _, pn in ipairs(self.activeSides) do
+      local side = self.sideStates[pn]
+      if side and side.status == "needs_login" then
+        hasNeedsLogin = true
+        side.status = "starting"
+        side.message = "Starting login session..."
+        side.starting = true
+        self.pendingStarts = self.pendingStarts + 1
+
+        requestDeviceLoginStart({
+          machineLabel = getMachineLabel(),
+          clientVersion = "ITGMania",
+          themeVersion = THEME and THEME:GetThemeDisplayName() or "theme"
+        }, function(response, ok, body)
+          if self.runToken ~= currentToken then return end
+          self.pendingStarts = math.max(0, self.pendingStarts - 1)
+          side.starting = false
+
+          if ok and body and body.sessionId and body.pollToken and body.verificationUrl then
+            side.sessionId = tostring(body.sessionId)
+            side.pollToken = tostring(body.pollToken)
+            side.verificationUrl = tostring(body.verificationUrl)
+            side.shortCode = body.shortCode and tostring(body.shortCode) or ""
+            side.pollIntervalSeconds = tonumber(body.pollIntervalSeconds) or 3
+            side.expiresAt = tonumber(body.expiresAt)
+            side.nextPollAt = GetTimeSinceStart() + 0.5
+            side.backoffIndex = 1
+            side.status = "waiting"
+            side.message = "Waiting for approval"
+            side.showQr = true
+          else
+            local err = response and response.error and ToEnumShortString(response.error) or nil
+            local code = response and response.statusCode or nil
+            side.status = "failure"
+            side.showQr = false
+            if err == "Blocked" then
+              side.message = "Host blocked by HttpAllowHosts"
+            else
+              side.message = "Unable to start login"
+            end
+          end
+
+          if self.pendingStarts == 0 then
+            self:playcommand("AssessCompletion")
+          end
+          self:queuecommand("RefreshVisuals")
+        end)
+      end
+    end
+
+    if not hasNeedsLogin then
+      self:playcommand("AssessCompletion")
+    end
+  end,
+  TickCommand = function(self)
+    if self.runToken == nil then return end
+    if not self.modalOpen then
+      self:sleep(0.2):queuecommand("Tick")
+      return
+    end
+    local now = GetTimeSinceStart()
+    local currentToken = self.runToken
+
+    for _, pn in ipairs(self.activeSides) do
+      local side = self.sideStates[pn]
+      if side and side.status == "waiting" and side.sessionId and side.pollToken then
+        if side.expiresAt and now > side.expiresAt then
+          side.status = "failure"
+          side.message = "Session expired"
+          side.showQr = false
+          self:queuecommand("RefreshVisuals")
+        elseif not side.polling and now >= (side.nextPollAt or 0) then
+          side.polling = true
+          requestDeviceLoginPoll(side.sessionId, side.pollToken, function(response, ok, body)
+            if self.runToken ~= currentToken then return end
+            side.polling = false
+            if side.status ~= "waiting" then return end
+
+            if not ok or not body then
+              local idx = math.min(side.backoffIndex or 1, #self.backoffs)
+              side.nextPollAt = GetTimeSinceStart() + self.backoffs[idx]
+              side.backoffIndex = math.min(idx + 1, #self.backoffs)
+              side.message = "Network issue, retrying..."
+              self:queuecommand("RefreshVisuals")
+              return
+            end
+
+            local pollStatus = body.status and tostring(body.status) or "pending"
+            if pollStatus == "pending" then
+              side.nextPollAt = GetTimeSinceStart() + (tonumber(side.pollIntervalSeconds) or 3)
+              side.backoffIndex = 1
+              side.message = "Waiting for approval"
+            elseif pollStatus == "consumed" then
+              if body.apiKey and tostring(body.apiKey) ~= "" then
+                local okWrite, reason = writeApiKey(side.player, tostring(body.apiKey))
+                if okWrite then
+                  side.status = "success"
+                  side.message = "Linked successfully"
+                  side.showQr = false
+                else
+                  side.status = "failure"
+                  side.message = "Write failed: " .. tostring(reason or "unknown")
+                end
+              else
+                side.status = "failure"
+                side.message = "Already completed elsewhere"
+              end
+            elseif pollStatus == "cancelled" then
+              side.status = "failure"
+              side.message = "Login cancelled"
+            elseif pollStatus == "expired" then
+              side.status = "failure"
+              side.message = "Session expired"
+            else
+              side.nextPollAt = GetTimeSinceStart() + (tonumber(side.pollIntervalSeconds) or 3)
+            end
+
+            self:playcommand("AssessCompletion")
+            self:queuecommand("RefreshVisuals")
+          end)
+        end
+      end
+    end
+
+    self:sleep(0.2):queuecommand("Tick")
+  end,
+  AssessCompletionCommand = function(self)
+    local hasPending = false
+    for _, pn in ipairs(self.activeSides) do
+      local side = self.sideStates[pn]
+      if side and (side.status == "checking" or side.status == "needs_login" or side.status == "starting" or side.status == "waiting") then
+        hasPending = true
+        break
+      end
+    end
+    self.flowDone = not hasPending
+  end,
+  RefreshVisualsCommand = function(self)
+    local modal = self:GetChild("ACLoginModal")
+    if modal then
+      modal:visible(self.modalOpen)
+    end
+
+    local panelP1 = modal and modal:GetChild("PanelP1") or nil
+    local panelP2 = modal and modal:GetChild("PanelP2") or nil
+    local hasP1 = self.sideStates["P1"] ~= nil
+    local hasP2 = self.sideStates["P2"] ~= nil
+
+    if panelP1 then
+      panelP1:visible(hasP1)
+      panelP1:x(hasP2 and (_screen.cx - 160) or _screen.cx)
+    end
+    if panelP2 then
+      panelP2:visible(hasP2)
+      panelP2:x(_screen.cx + 160)
+    end
+
+    for _, pn in ipairs({ "P1", "P2" }) do
+      local side = self.sideStates[pn]
+      local panel = (pn == "P1") and panelP1 or panelP2
+      local status = panel and panel:GetChild("Status") or nil
+      local code = panel and panel:GetChild("Code") or nil
+      local url = panel and panel:GetChild("Url") or nil
+
+      if side then
+        if status then
+          if side.status == "already_linked" then
+            status:zoom(0.58):diffuse(0.2, 1, 0.2, 1):settext(pn .. ": ✔ Already Logged In")
+          else
+            status:zoom(0.54):diffuse(1, 1, 1, 1):settext((pn .. ": ") .. tostring(side.message or ""))
+          end
+        end
+        if code then code:settext(side.shortCode and ("Code: " .. side.shortCode) or "") end
+        if url then
+          url:settext("")
+        end
+        if panel then
+          if side.showQr and side.verificationUrl and side.status == "waiting" then
+            panel:playcommand("SetQr", { url = side.verificationUrl })
+          else
+            panel:playcommand("ClearQr")
+          end
+        end
+      else
+        if status then status:zoom(0.54):diffuse(1, 1, 1, 1):settext("") end
+        if code then code:settext("") end
+        if url then url:settext("") end
+        if panel then panel:playcommand("ClearQr") end
+      end
+    end
+
+    local footer = modal and modal:GetChild("Footer") or nil
+    if footer then
+      footer:visible(true)
+    end
+  end,
+
+  Def.ActorFrame {
+    Name = "ACLoginModal",
+    InitCommand = function(self) self:visible(false) end,
+    LoadActor(THEME:GetPathS("Common", "start")) .. {
+      Name = "StartSound",
+      IsAction = true,
+      SupportPan = false,
+    },
+    LoadActor(THEME:GetPathS("Common", "Cancel")) .. {
+      Name = "CancelSound",
+      IsAction = true,
+      SupportPan = false,
+    },
+    Def.Quad {
+      InitCommand = function(self)
+        self:FullScreen():diffuse(Color.Black):diffusealpha(0.88)
+      end
+    },
+    Def.Quad {
+      InitCommand = function(self)
+        self:xy(_screen.cx, 28):zoomto(620, 2):diffuse(1, 1, 1, 0.03)
+      end
+    },
+    LoadFont("Common Bold") .. {
+      InitCommand = function(self)
+        self:xy(_screen.cx, 28):zoom(0.56):settext("ARROW CLOUD LOGIN")
+      end
+    },
+
+    Def.ActorFrame {
+      Name = "PanelP1",
+      InitCommand = function(self) self:xy(_screen.cx - 160, _screen.cy - 4) end,
+      SetQrCommand = function(self, params)
+        local url = params and params.url or ""
+        if self._lastQrUrl == url then return end
+        self._lastQrUrl = url
+
+        local verts, pixelSize = buildQrVertices(url, 124)
+        local outer = self:GetChild("QROuter")
+        local border = self:GetChild("QRBorder")
+        local inset = self:GetChild("QRInset")
+        local data = self:GetChild("QRCodeData")
+        if not verts or not data then
+          if outer then outer:visible(false) end
+          if border then border:visible(false) end
+          if inset then inset:visible(false) end
+          if data then data:visible(false) end
+          return
+        end
+
+        if outer then outer:visible(true) end
+        if border then border:visible(true) end
+        if inset then inset:visible(true) end
+        data:visible(true)
+        data:SetVertices(verts)
+        data:zoom(pixelSize)
+      end,
+      ClearQrCommand = function(self)
+        self._lastQrUrl = nil
+        local outer = self:GetChild("QROuter")
+        local border = self:GetChild("QRBorder")
+        local inset = self:GetChild("QRInset")
+        local data = self:GetChild("QRCodeData")
+        if outer then outer:visible(false) end
+        if border then border:visible(false) end
+        if inset then inset:visible(false) end
+        if data then data:visible(false) end
+      end,
+      Def.Quad {
+        InitCommand = function(self) self:zoomto(270, 248):diffuse(1, 1, 1, 0.12) end
+      },
+      Def.Quad {
+        InitCommand = function(self) self:zoomto(266, 244):diffuse(0.09, 0.09, 0.1, 0.98) end
+      },
+      Def.Quad {
+        InitCommand = function(self) self:y(-105):zoomto(270, 34):diffuse(0.14, 0.14, 0.16, 1) end
+      },
+      Def.Quad {
+        Name = "QROuter",
+        InitCommand = function(self)
+          self:zoom(144):xy(0, -10):diffuse(Color.Black):visible(false)
+        end
+      },
+      Def.Quad {
+        Name = "QRInset",
+        InitCommand = function(self)
+          self:zoom(136):xy(0, -10):diffuse(Color.Black):visible(false)
+        end
+      },
+      Def.Quad {
+        Name = "QRBorder",
+        InitCommand = function(self)
+          self:zoom(140):xy(0, -10):diffuse(Color.White):visible(false)
+        end
+      },
+      Def.ActorMultiVertex {
+        Name = "QRCodeData",
+        InitCommand = function(self)
+          self:SetDrawState({ Mode = "DrawMode_Quads" })
+          self:xy(-62, -72):visible(false)
+        end
+      },
+      LoadFont("Common Bold") .. {
+        InitCommand = function(self) self:y(-105):zoom(0.54):settext("PLAYER 1") end
+      },
+      LoadFont("Common Normal") .. {
+        Name = "Status",
+        InitCommand = function(self) self:xy(0, 78):zoom(0.56):maxwidth(430):settext("") end
+      },
+      LoadFont("Common Normal") .. {
+        Name = "Code",
+        InitCommand = function(self) self:xy(0, 108):zoom(0.58):diffuse(0.95, 0.95, 0.95, 1):settext("") end
+      },
+      LoadFont("Common Normal") .. {
+        Name = "Url",
+        InitCommand = function(self) self:xy(0, 122):zoom(0.35):maxwidth(620):settext("") end
+      }
+    },
+
+    Def.ActorFrame {
+      Name = "PanelP2",
+      InitCommand = function(self) self:xy(_screen.cx + 160, _screen.cy - 4) end,
+      SetQrCommand = function(self, params)
+        local url = params and params.url or ""
+        if self._lastQrUrl == url then return end
+        self._lastQrUrl = url
+
+        local verts, pixelSize = buildQrVertices(url, 124)
+        local outer = self:GetChild("QROuter")
+        local border = self:GetChild("QRBorder")
+        local inset = self:GetChild("QRInset")
+        local data = self:GetChild("QRCodeData")
+        if not verts or not data then
+          if outer then outer:visible(false) end
+          if border then border:visible(false) end
+          if inset then inset:visible(false) end
+          if data then data:visible(false) end
+          return
+        end
+
+        if outer then outer:visible(true) end
+        if border then border:visible(true) end
+        if inset then inset:visible(true) end
+        data:visible(true)
+        data:SetVertices(verts)
+        data:zoom(pixelSize)
+      end,
+      ClearQrCommand = function(self)
+        self._lastQrUrl = nil
+        local outer = self:GetChild("QROuter")
+        local border = self:GetChild("QRBorder")
+        local inset = self:GetChild("QRInset")
+        local data = self:GetChild("QRCodeData")
+        if outer then outer:visible(false) end
+        if border then border:visible(false) end
+        if inset then inset:visible(false) end
+        if data then data:visible(false) end
+      end,
+      Def.Quad {
+        InitCommand = function(self) self:zoomto(270, 248):diffuse(1, 1, 1, 0.12) end
+      },
+      Def.Quad {
+        InitCommand = function(self) self:zoomto(266, 244):diffuse(0.09, 0.09, 0.1, 0.98) end
+      },
+      Def.Quad {
+        InitCommand = function(self) self:y(-105):zoomto(270, 34):diffuse(0.14, 0.14, 0.16, 1) end
+      },
+      Def.Quad {
+        Name = "QROuter",
+        InitCommand = function(self)
+          self:zoom(144):xy(0, -10):diffuse(Color.Black):visible(false)
+        end
+      },
+      Def.Quad {
+        Name = "QRInset",
+        InitCommand = function(self)
+          self:zoom(136):xy(0, -10):diffuse(Color.Black):visible(false)
+        end
+      },
+      Def.Quad {
+        Name = "QRBorder",
+        InitCommand = function(self)
+          self:zoom(140):xy(0, -10):diffuse(Color.White):visible(false)
+        end
+      },
+      Def.ActorMultiVertex {
+        Name = "QRCodeData",
+        InitCommand = function(self)
+          self:SetDrawState({ Mode = "DrawMode_Quads" })
+          self:xy(-62, -72):visible(false)
+        end
+      },
+      LoadFont("Common Bold") .. {
+        InitCommand = function(self) self:y(-105):zoom(0.54):settext("PLAYER 2") end
+      },
+      LoadFont("Common Normal") .. {
+        Name = "Status",
+        InitCommand = function(self) self:xy(0, 78):zoom(0.56):maxwidth(430):settext("") end
+      },
+      LoadFont("Common Normal") .. {
+        Name = "Code",
+        InitCommand = function(self) self:xy(0, 108):zoom(0.58):diffuse(0.95, 0.95, 0.95, 1):settext("") end
+      },
+      LoadFont("Common Normal") .. {
+        Name = "Url",
+        InitCommand = function(self) self:xy(0, 122):zoom(0.35):maxwidth(620):settext("") end
+      }
+    },
+
+    Def.ActorFrame {
+      Name = "Footer",
+      InitCommand = function(self)
+        self:xy(_screen.cx, _screen.h - 42)
+      end,
+      LoadFont("Common Bold") .. {
+        InitCommand = function(self)
+          self:zoom(0.56):settext("PRESS SELECT/BACK TO CLOSE")
+        end
+      }
+    }
+  }
 }
 
 -- ---------------------------------------------------------------------------------------------
