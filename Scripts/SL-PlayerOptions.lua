@@ -848,6 +848,10 @@ local Overrides = {
 			if SL.Global.GameMode=="Casual" then
 				local idx = 2
 				t[idx] = THEME:GetString(tns,"W4").."s + "..t[idx-1]
+			else
+				t[2] = THEME:GetString(tns,"W5").."s"
+				t[3] = THEME:GetString(tns,"W4").."s + "..t[2]
+				t[4] = THEME:GetString(tns,"W1").."s + "..THEME:GetString(tns,"W2").."s"
 			end
 			return t
 		end,
@@ -855,7 +859,7 @@ local Overrides = {
 			local mods, playeroptions = GetModsAndPlayerOptions(pn)
 			-- First determine the set of actual enabled windows.
 			local windows = {true,true,true,true,true}
-			if SL.Global.Gamemode == "Casual" then
+			if SL.Global.GameMode == "Casual" then
 				windows[4] = false
 				windows[5] = false
 				list[2] = true
@@ -872,7 +876,6 @@ local Overrides = {
 				if list[i] then
 					mods.TimingWindows = self.Values[i]
 					playeroptions:ResetDisabledTimingWindows()
-					if SL.Global.GameMode == "ITG" then return end
 					for i,enabled in ipairs(mods.TimingWindows) do
 						if not enabled then
 							playeroptions:DisableTimingWindow("TimingWindow_W"..i)
