@@ -20,10 +20,21 @@ local NoteFieldIsCentered = (GetNotefieldX(player) == _screen.cx)
 -- (GS will leave rows 6-7 blank) to keep the layout simple and consistent.
 local NumEntries = 7
 
-local border = 5
+-- With GrooveStats leaderboards hidden, the box only ever shows ITL (5 rows) or
+-- Arrow Cloud (7 rows) content, never GrooveStats' own 5-row layout - so we can
+-- afford a slightly larger, less cramped box instead of keeping it sized for GS.
+local hideGrooveStats = ThemePrefs.Get("HideGrooveStats")
+
+local border = hideGrooveStats and 8 or 5
+-- Row text x-offsets (below) are fixed distances from center, not proportional to
+-- width, so widening the box just adds slack on the right without moving the text -
+-- leave width alone and only grow height (more row spacing) and border (padding).
 local width = 162
--- Keep original box height so GS visuals are unchanged; we'll compress text for AC
-local height = 80
+local height = hideGrooveStats and 94 or 80
+-- The box is positioned by its center, so growing height extends it both up and
+-- down equally - shift the anchor up by half the growth so the bottom edge stays
+-- lined up with the footer/PRESS START row instead of dropping into it.
+local yShift = -(height - 80) / 2
 
 -- Row display policy: GS/events show 5 rows; ArrowCloud shows 7 within same height
 local GS_ROWS = 5
@@ -35,10 +46,16 @@ local function RowSpacingForStyle(style)
 	return height / RowsForStyle(style)
 end
 local function TextZoomForStyle(style)
-	return (style >= 4) and 0.75 or 0.87
+	if style >= 4 then
+		return hideGrooveStats and 0.80 or 0.75
+	end
+	return hideGrooveStats and 0.89 or 0.87
 end
 local function CrownZoomForStyle(style)
-	return (style >= 4) and 0.075 or 0.09
+	if style >= 4 then
+		return hideGrooveStats and 0.08 or 0.075
+	end
+	return hideGrooveStats and 0.092 or 0.09
 end
 
 local cur_style = 0
@@ -92,6 +109,16 @@ local firstResponseHandled = false
 -- showing already (via AC) while this is still true - used to keep the
 -- GrooveStats logo's loading glow going instead of prematurely settling it.
 local gsPending = false
+-- Bumped every time MakeRequestCommand starts a new request cycle (new chart
+-- selected). Each in-flight request captures the value current at the moment it
+-- was fired; if that value no longer matches requestGeneration by the time the
+-- response arrives, the chart changed again in between and the response is
+-- discarded outright rather than corrupting shared state (all_data,
+-- pendingRequests, firstResponseHandled, gsPending) for whatever chart is
+-- actually selected now. Without this, fast scrolling could let a slow, stale
+-- GS/AC response land after a newer request cycle already started, which is the
+-- likely cause of the box occasionally failing to load in properly.
+local requestGeneration = 0
 
 local all_data = {}
 
@@ -124,8 +151,6 @@ end
 
 -- Initialize the all_data object.
 ResetAllData()
-
-local hideGrooveStats = ThemePrefs.Get("HideGrooveStats")
 
 -- Appends a style to the rotation order the first time it gets data, preserving
 -- genuine arrival order (see styleOrder declaration above). style_index 3 is ITL,
@@ -175,17 +200,20 @@ local SetScoreData = function(data_idx, score_idx, rank, name, score, isSelf, is
 	end
 end
 
-local LeaderboardRequestProcessor = function(res, master)
+local LeaderboardRequestProcessor = function(res, args)
+	local master = args and args.parent
+	-- Discard responses left over from a chart we've since navigated away from -
+	-- see requestGeneration's declaration above. This must be the very first
+	-- check, before any shared state gets touched.
+	if not args or args.generation ~= requestGeneration then return end
 	gsPending = false
   if master == nil then
 		Trace("[Scorebox] master is nil, aborting")
 		return
 	end
 
-	Trace("[Scorebox] Response statusCode: "..tostring(res.statusCode))
-	Trace("[Scorebox] Response error: "..tostring(res.error))
-
 	if res.error or res.statusCode ~= 200 then
+		Trace("[Scorebox] GS FAILED statusCode="..tostring(res.statusCode).." error="..tostring(res.error))
 		local error = res.error and ToEnumShortString(res.error) or nil
 		local text = ""
 		if error == "Timeout" then
@@ -456,22 +484,73 @@ end
 
 -- ArrowCloud integration --------------------------------------------------
 
-local ArrowCloudRequestProcessor = function(res)
-	-- Expect res.statusCode and res.body (raw JSON string)
-	if not res then return end
-	if res.statusCode ~= 200 then return end
-	if not res.body then return end
-	local ok, parsed = pcall(JsonDecode, res.body)
-	if not ok or type(parsed) ~= "table" then return end
-	if type(parsed.leaderboards) ~= "table" then return end
+-- Maps ArrowCloud leaderboard types to style indices (5..7 into all_data, 1-based).
+local AcIndexMap = { ITG = 5, EX = 6, HardEX = 7 }
 
-	-- Map ArrowCloud types to style indices (5..7); only process what the API returned.
+-- Puts the same placeholder text/style into all 3 AC slots and appends them to the
+-- rotation - used both for actual failures (HTTP error, timeout, bad/missing body)
+-- and for a well-formed response with no data yet. We used to just return on these
+-- cases and leave the box with nothing to show at all - since AC is the primary/
+-- expected-fast source, a chart with no usable response would go from spinner to
+-- completely empty with no explanation (looked like "the leaderboard never even
+-- tries to load"). GrooveStats already shows a "No Scores" pane in the equivalent
+-- case; do the same here instead of silence.
+local function ShowArrowCloudFailure(text)
+	for _, style_index in pairs(AcIndexMap) do
+		if all_data[style_index] then
+			local isExType = style_index ~= 5
+			SetScoreData(style_index, 1, "", text, "", false, false, false, isExType)
+			for i=2, NumEntries do
+				SetScoreData(style_index, i, "", "", "", false, false, false, isExType)
+			end
+			AppendStyle(style_index - 1)
+		end
+	end
+end
+
+-- `context` is a short "song=... hash=..." string (built by the caller, which has
+-- the song title/hash in scope) so log lines can actually be correlated to a
+-- specific chart - the earlier version of this logging only showed statusCode/error
+-- with no way to tell which song a given line was for.
+local ArrowCloudRequestProcessor = function(res, context)
+	if not res then return end
+	local ctx = context or "?"
+
+	if res.error then
+		local error = ToEnumShortString(res.error)
+		Trace("[Scorebox][AC] "..ctx.." FAILED network error="..tostring(error))
+		ShowArrowCloudFailure(error == "Timeout" and "Timed Out" or "Failed to Load 😞")
+		return
+	end
+	if res.statusCode ~= 200 then
+		Trace("[Scorebox][AC] "..ctx.." FAILED statusCode="..tostring(res.statusCode))
+		ShowArrowCloudFailure("Failed to Load 😞")
+		return
+	end
+	if not res.body or #res.body == 0 then
+		Trace("[Scorebox][AC] "..ctx.." FAILED empty body")
+		ShowArrowCloudFailure("Failed to Load 😞")
+		return
+	end
+	local ok, parsed = pcall(JsonDecode, res.body)
+	if not ok then
+		Trace("[Scorebox][AC] "..ctx.." FAILED JSON decode error: "..tostring(parsed))
+		ShowArrowCloudFailure("Failed to Load 😞")
+		return
+	end
+	if type(parsed) ~= "table" or type(parsed.leaderboards) ~= "table" then
+		Trace("[Scorebox][AC] "..ctx.." FAILED unexpected body shape, first 200 chars: "..tostring(res.body):sub(1,200))
+		ShowArrowCloudFailure("Failed to Load 😞")
+		return
+	end
+
 	-- We append to the rotation order in the same sequence parsed.leaderboards lists
 	-- them, so the pane reflects the order ArrowCloud itself chose to return them in.
-	local index_map = { ITG = 5, EX = 6, HardEX = 7 }
+	local boardsSeen = 0
 	for _, board in ipairs(parsed.leaderboards) do
-		local style_index = index_map[board.type]
+		local style_index = AcIndexMap[board.type]
 		if style_index and all_data[style_index] then
+			boardsSeen = boardsSeen + 1
 			local isExType = (board.type == "EX" or board.type == "HardEX")
 			local slot = 1
 			local any = false
@@ -500,24 +579,33 @@ local ArrowCloudRequestProcessor = function(res)
 			AppendStyle(style_index - 1)
 		end
 	end
+
+	if boardsSeen == 0 then
+		-- A well-formed 200 response with no matching boards at all (as opposed to
+		-- a board that's present but has zero scores, handled above) - a chart
+		-- ArrowCloud genuinely has no data for yet. GrooveStats shows a pane with
+		-- "No Scores" rather than nothing in the equivalent case, so do the same
+		-- here instead of leaving the box blank with no explanation.
+		ShowArrowCloudFailure("No Scores Yet")
+	end
 end
 
 local af = Def.ActorFrame{
 	Name="ScoreBox"..pn,
 	InitCommand=function(self)
-		if #GAMESTATE:GetHumanPlayers() == 1 then 
-			self:x(_screen.cx + 80):y(_screen.cy + 160)
+		if #GAMESTATE:GetHumanPlayers() == 1 then
+			self:x(_screen.cx + 80):y(_screen.cy + 160 + yShift)
 			if pn == "P2" then
-				self:y(_screen.cy*1.65 - 55)
+				self:y(_screen.cy*1.65 - 55 + yShift)
 			end
 		else
 			if pn == "P1" then
-				self:zoom(0.65):x(_screen.cx - 65):y(_screen.cy + 178)
+				self:zoom(0.65):x(_screen.cx - 65):y(_screen.cy + 178 + yShift)
 				if IsNotWide then
 					self:x(_screen.cx - 48)
 				end
 			else
-				self:zoom(0.65):x(_screen.cx + 371):y(_screen.cy + 178)
+				self:zoom(0.65):x(_screen.cx + 371):y(_screen.cy + 178 + yShift)
 				if IsNotWide then
 					self:x(_screen.cx + 279)
 				end
@@ -529,12 +617,12 @@ local af = Def.ActorFrame{
 	OffCommand=function(self) self:stoptweening() end,
 	PlayerJoinedMessageCommand=function(self, params)
 		if pn == "P1" then
-			self:zoom(0.65):x(_screen.cx - 65):y(_screen.cy + 178)
+			self:zoom(0.65):x(_screen.cx - 65):y(_screen.cy + 178 + yShift)
 			if IsNotWide then
 				self:x(_screen.cx - 48)
 			end
 		else
-			self:zoom(0.65):x(_screen.cx + 371):y(_screen.cy + 178)
+			self:zoom(0.65):x(_screen.cx + 371):y(_screen.cy + 178 + yShift)
 			if IsNotWide then
 				self:x(_screen.cx + 279)
 			end
@@ -544,9 +632,9 @@ local af = Def.ActorFrame{
 		if params.Player == player then
 			self:visible(false)
 		end
-		self:x(_screen.cx + 80):y(_screen.cy + 160):zoom(1)
+		self:x(_screen.cx + 80):y(_screen.cy + 160 + yShift):zoom(1)
 		if pn == "P2" then
-			self:y(_screen.cy*1.65 - 55)
+			self:y(_screen.cy*1.65 - 55 + yShift)
 		end
 	end,
 	CurrentSongChangedMessageCommand=function(self)
@@ -585,11 +673,6 @@ local af = Def.ActorFrame{
 			self:GetChild("Name"..i):visible(show)
 			self:GetChild("Score"..i):visible(show)
 			self:GetChild("Rank"..i):visible(show)
-		end
-		-- Leave the loading glow running while GS is still in flight (it's typically
-		-- much slower than AC, so the box is often already showing AC data here).
-		if not gsPending then
-			self:GetChild("GrooveStatsLogo"):stopeffect()
 		end
 		self:GetChild("BoogieStatsLogo"):stopeffect()
 		self:GetChild("BoogieStatsEXLogo"):stopeffect()
@@ -636,6 +719,18 @@ local af = Def.ActorFrame{
 			end
 		end,
 		MakeRequestCommand=function(self)
+			-- Section/group headers in the wheel (e.g. hovering a series name when
+			-- sorted by series) have no current song - GAMESTATE:GetCurrentSteps can
+			-- still report stale data from whatever song was last actually selected,
+			-- which would otherwise cause this to spuriously re-fire and flash the
+			-- loading indicator while just browsing folder headers. Bail out entirely
+			-- unless a real song is currently selected.
+			if not GAMESTATE:GetCurrentSong() then
+				self:GetParent():finishtweening():visible(false)
+				return
+			end
+			local songTitle = GAMESTATE:GetCurrentSong():GetDisplayFullTitle()
+
 			local sendRequest = false
 			local headers = {}
 			-- GrooveStats remains at 5 results regardless of AC's 7
@@ -643,7 +738,10 @@ local af = Def.ActorFrame{
 				maxLeaderboardResults=GS_ROWS,
 			}
 
-			if SL[pn].ApiKey ~= "" and SL[pn].Streams.Hash ~= "" then
+			-- Don't even ask GrooveStats for leaderboards when the player has it
+			-- hidden - previously we still fired the request (and kept the loading
+			-- spinner going for it) even though its results would never be shown.
+			if not hideGrooveStats and SL[pn].ApiKey ~= "" and SL[pn].Streams.Hash ~= "" then
 				query["chartHashP"..n] = SL[pn].Streams.Hash
 				headers["x-api-key-player-"..n] = SL[pn].ApiKey
 				sendRequest = true
@@ -656,11 +754,18 @@ local af = Def.ActorFrame{
 			local acEnabled = (SL.ArrowCloud and SL.ArrowCloud.Enabled) or false
 			local acKey = (SL[pn] and SL[pn].ArrowCloudApiKey and #SL[pn].ArrowCloudApiKey > 0) or false
 			local acHash = (SL[pn] and SL[pn].Streams and SL[pn].Streams.Hash and #SL[pn].Streams.Hash > 0) or false
-			local willDoArrowCloud = acEnabled and acKey and acHash
-			-- (verbose debug removed)
+			-- ComputeChartHash (SL-ChartParser.lua) always updates Streams.Filename once
+			-- it has actually run for the current chart, even when it couldn't produce a
+			-- hash (some charts fail to parse - GetSimfileString/GetSimfileChartString
+			-- returning nil - and it silently leaves Hash as ""). If Filename matches the
+			-- currently selected steps, hashing was genuinely attempted and failed, as
+			-- opposed to just not having settled yet after the wheel-scroll debounce.
+			local currentSteps = GAMESTATE:GetCurrentSteps(player)
+			local hashFailed = (not acHash) and currentSteps and SL[pn].Streams.Filename == currentSteps:GetFilename()
+			local willDoArrowCloud = acEnabled and acKey and (acHash or hashFailed)
 			if sendRequest or willDoArrowCloud then
 				if self.IsParsing[1] or self.IsParsing[2] then return end
-				if currentHash == SL[pn].Streams.Hash and not willDoArrowCloud then 
+				if currentHash == SL[pn].Streams.Hash and not willDoArrowCloud then
 					self:GetParent():visible(true)
 					self:GetParent():queuecommand("CheckScorebox")
 					return
@@ -673,30 +778,62 @@ local af = Def.ActorFrame{
 				pendingRequests = 0
 				gsPending = sendRequest
 				firstResponseHandled = false
+				requestGeneration = requestGeneration + 1
+				local myGeneration = requestGeneration
 				if willDoArrowCloud then pendingRequests = pendingRequests + 1 end
 				if sendRequest then pendingRequests = pendingRequests + 1 end
 
 				-- ArrowCloud direct request (independent of GS). We perform a separate HTTP call.
 						if willDoArrowCloud then
 					local ach = SL[pn].Streams.Hash
-					local acHeaders = {}
-					acHeaders["Authorization"] = "Bearer " .. SL[pn].ArrowCloudApiKey
-					-- ArrowCloud HTTP request
-					NETWORK:HttpRequest{
-						url = SL.ArrowCloud.BaseURL .. "/v1/chart/" .. ach .. "/leaderboards",
-						method = "GET",
-						headers = acHeaders,
-						connectTimeout = SL.ArrowCloud.RequestTimeout,
-						transferTimeout = SL.ArrowCloud.RequestTimeout,
-						onResponse = function(acres)
-							ArrowCloudRequestProcessor(acres)
-							pendingRequests = pendingRequests - 1
-							if not firstResponseHandled then
-								firstResponseHandled = true
-								self:GetParent():queuecommand("CheckScorebox")
+					local acContext = "song=\""..tostring(songTitle).."\" hash="..tostring(ach)
+
+					if hashFailed then
+						-- This chart's hash could never be computed (see hashFailed's
+						-- declaration above) - there's no hash to request a leaderboard
+						-- with. Showing the explanation has to be deferred (like the
+						-- watchdog below) rather than done inline here: ResetAllData()
+						-- runs unconditionally right after this block and would
+						-- immediately wipe out anything set synchronously.
+						Trace("[Scorebox][AC] "..acContext.." SKIPPED - chart hash could not be computed")
+						self.hashFailedGeneration = myGeneration
+						self.hashFailedContext = acContext
+						self:queuecommand("ArrowCloudHashFailed")
+					else
+						local acHeaders = {}
+						acHeaders["Authorization"] = "Bearer " .. SL[pn].ArrowCloudApiKey
+						-- ArrowCloud HTTP request
+						NETWORK:HttpRequest{
+							url = SL.ArrowCloud.BaseURL .. "/v1/chart/" .. ach .. "/leaderboards",
+							method = "GET",
+							headers = acHeaders,
+							connectTimeout = SL.ArrowCloud.RequestTimeout,
+							transferTimeout = SL.ArrowCloud.RequestTimeout,
+							onResponse = function(acres)
+								-- Discard if we've since moved on to a different chart - see
+								-- requestGeneration's declaration above.
+								if myGeneration ~= requestGeneration then
+									Trace("[Scorebox][AC] "..acContext.." response arrived but generation is stale, discarding")
+									return
+								end
+								ArrowCloudRequestProcessor(acres, acContext)
+								pendingRequests = pendingRequests - 1
+								if not firstResponseHandled then
+									firstResponseHandled = true
+									self:GetParent():queuecommand("CheckScorebox")
+								end
 							end
-						end
-					}
+						}
+						-- Safety net: if the engine's connect/transferTimeout doesn't
+						-- actually fire onResponse (observed as the box getting stuck on
+						-- the loading spinner indefinitely for specific charts, likely
+						-- related to the engine only dispatching one HTTP request at a
+						-- time under rapid navigation), give up after a bit longer than
+						-- the request's own timeout instead of spinning forever.
+						self.acWatchdogGeneration = myGeneration
+						self.acWatchdogContext = acContext
+						self:sleep((SL.ArrowCloud.RequestTimeout or 5) + 3):queuecommand("ArrowCloudWatchdog")
+					end
 				end
 				
 				RemoveStaleCachedRequests()
@@ -717,7 +854,14 @@ local af = Def.ActorFrame{
 						end
 					end
 				end
-				self:GetParent():GetChild("GrooveStatsLogo"):visible(true):diffusealpha(0.5):glowshift({color("#C8FFFF"), color("#6BF0FF")})
+				-- The loading indicator - both the initial "nothing has responded yet"
+				-- state and "GS specifically is still catching up" once AC data is
+				-- already showing (see gsPending in the master LoopScoreboxCommand) -
+				-- is the generic spinner, not the GrooveStats logo. GrooveStatsLogo
+				-- itself is only shown later, as the watermark for actual GS data in
+				-- the rotation (its own LoopScoreboxCommand).
+				self:GetParent():GetChild("LoadingSpinner"):visible(true)
+				self:GetParent():GetChild("GrooveStatsLogo"):visible(false)
 				self:GetParent():GetChild("BoogieStatsLogo"):visible(false)
 				self:GetParent():GetChild("BoogieStatsEXLogo"):visible(false)
 				self:GetParent():GetChild("SRPGLogo"):diffusealpha(0):visible(false)
@@ -740,11 +884,36 @@ local af = Def.ActorFrame{
 						headers=headers,
 						timeout=10,
 						callback=LeaderboardRequestProcessor,
-						args=self:GetParent(),
+						args={parent=self:GetParent(), generation=myGeneration},
 					})
 				end
 			end
+		end,
+	ArrowCloudWatchdogCommand=function(self)
+		-- See the sleep/queuecommand scheduled right after the ArrowCloud HttpRequest
+		-- in MakeRequestCommand. If this generation's request never resolved
+		-- (onResponse simply never called - not even with an error), treat it the
+		-- same as an error response instead of leaving the box on the loading
+		-- spinner forever.
+		if self.acWatchdogGeneration ~= requestGeneration then return end
+		if firstResponseHandled then return end
+		Trace("[Scorebox][AC] "..tostring(self.acWatchdogContext).." WATCHDOG FIRED - request never resolved, giving up")
+		ShowArrowCloudFailure("Failed to Load 😞")
+		pendingRequests = math.max(0, pendingRequests - 1)
+		firstResponseHandled = true
+		self:GetParent():queuecommand("CheckScorebox")
+	end,
+	-- Deferred from the hashFailed branch in MakeRequestCommand - see the comment
+	-- there. Runs after ResetAllData() has already happened for this request cycle.
+	ArrowCloudHashFailedCommand=function(self)
+		if self.hashFailedGeneration ~= requestGeneration then return end
+		ShowArrowCloudFailure("Chart Unsupported")
+		pendingRequests = math.max(0, pendingRequests - 1)
+		if not firstResponseHandled then
+			firstResponseHandled = true
+			self:GetParent():queuecommand("CheckScorebox")
 		end
+	end,
 	},
 
 	-- Outline
@@ -944,6 +1113,32 @@ local af = Def.ActorFrame{
 		end,
 		ResetCommand=function(self) self:stoptweening() end,
 		OffCommand=function(self) self:stoptweening() end
+	},
+
+	-- Generic loading spinner, shown from the moment a request is fired until the
+	-- first response (GS or AC) actually has content to display - see
+	-- MakeRequestCommand. Deliberately not GrooveStats-branded since this box may
+	-- be showing ArrowCloud-only results.
+	Def.Sprite{
+		Texture=THEME:GetPathG("", "LoadingSpinner 10x3.png"),
+		Name="LoadingSpinner",
+		Frames=Sprite.LinearFrames(30,1),
+		InitCommand=function(self)
+			self:zoom(0.15):diffuse(GetHexColor(SL.Global.ActiveColorIndex, true)):visible(false)
+		end,
+		VisualStyleSelectedMessageCommand=function(self)
+			self:diffuse(GetHexColor(SL.Global.ActiveColorIndex, true))
+		end,
+		LoopScoreboxCommand=function(self)
+			-- Keep spinning while GS is still in flight (it's typically much slower
+			-- than AC, so the box is often already showing AC data here); hide once
+			-- nothing is left pending.
+			if not gsPending then
+				self:visible(false)
+			end
+		end,
+		ResetCommand=function(self) self:stoptweening() end,
+		OffCommand=function(self) self:stoptweening():visible(false) end
 	},
 }
 
