@@ -216,10 +216,16 @@ local LeaderboardRequestProcessor = function(res, master)
 	elseif headers["bs-leaderboard-player-" .. n] == "BS-EX" then
 		boogie_ex = true
 	end
-	if not SCREENMAN:GetTopScreen():GetChild("Overlay") then return end
-	local gsBox = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("PerPlayer"):GetChild("ScoreBox" .. pn):GetChild("GrooveStatsLogo")
-	local bsBox = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("PerPlayer"):GetChild("ScoreBox" .. pn):GetChild("BoogieStatsLogo")
-	local bsExBox = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("PerPlayer"):GetChild("ScoreBox" .. pn):GetChild("BoogieStatsEXLogo")
+	-- The response can land after we've left ScreenSelectMusic (or after this player's
+	-- box has otherwise gone away), so guard every step of this chain rather than just
+	-- the first - a response arriving mid-transition shouldn't be able to crash us.
+	local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay")
+	local scoreBox = overlay and overlay:GetChild("PerPlayer") and overlay:GetChild("PerPlayer"):GetChild("ScoreBox" .. pn)
+	if not scoreBox then return end
+	local gsBox = scoreBox:GetChild("GrooveStatsLogo")
+	local bsBox = scoreBox:GetChild("BoogieStatsLogo")
+	local bsExBox = scoreBox:GetChild("BoogieStatsEXLogo")
+	if not (gsBox and bsBox and bsExBox) then return end
 
 	gsBox:stopeffect()
 	if boogie then
