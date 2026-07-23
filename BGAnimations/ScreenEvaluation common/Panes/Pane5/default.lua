@@ -51,9 +51,11 @@ local max_error = 0 -- Temporary fix for non rounded max error until mainline SL
 for t in ivalues(sequential_offsets) do
 	-- the first value in t is CurrentMusicSeconds when the offset occurred, which we don't need here
 	-- the second value in t is the offset value or the string "Miss"
+	-- the ninth value in t flags auto-judged pump notes (hold heads and ticks);
+	-- we skip those here since they aren't actually timed
 	local val = t[2]
 
-	if val ~= "Miss" then
+	if val ~= "Miss" and not t[9] then
 		count = count + 1
 
 		-- check if this is the highest error amount
@@ -83,7 +85,7 @@ if count > 0 then
 		local sum_diff_squared = 0
 		for t in ivalues(sequential_offsets) do
 			local val = t[2]
-			if val ~= "Miss" then
+			if val ~= "Miss" and not t[9] then
 				sum_diff_squared = sum_diff_squared + math.pow((val - avg_offset), 2)
 			end
 		end
@@ -128,6 +130,8 @@ pane[#pane+1] = Def.BitmapText{
 			:horizalign(left)
 		if ThemePrefs.Get("VisualStyle") == "Technique" then
 			self:diffusealpha(0.5)
+		elseif ThemePrefs.Get("VisualStyle") == "Transistor"  then
+			self:diffusealpha(0.7)
 		end
 	end,
 }
@@ -154,6 +158,8 @@ pane[#pane+1] = Def.Quad{
 			:diffuse(color("#101519"))
 		if ThemePrefs.Get("VisualStyle") == "Technique" then
 			self:diffusealpha(0.5)
+		elseif ThemePrefs.Get("VisualStyle") == "Transistor"  then
+			self:diffusealpha(0.7)
 		end
 	end,
 }
@@ -233,6 +239,8 @@ pane[#pane+1] = Def.Quad{
 			:diffuse(color("#101519"))
 		if ThemePrefs.Get("VisualStyle") == "Technique" then
 			self:diffusealpha(0.5)
+		elseif ThemePrefs.Get("VisualStyle") == "Transistor"  then
+			self:diffusealpha(0.7)
 		end
 	end,
 }
@@ -240,7 +248,6 @@ pane[#pane+1] = Def.Quad{
 -- only bother crunching the numbers and adding extra BitmapText actors if there are
 -- valid offset values to analyze; (MISS has no numerical offset and can't be analyzed)
 if next(offsets) ~= nil then
-
 	local histogram
 	-- don't re-run the calculations if only one player is joined
 	-- and we've already run them for a previous pane

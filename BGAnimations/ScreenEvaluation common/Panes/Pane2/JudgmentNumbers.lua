@@ -1,7 +1,8 @@
 local player, controller = unpack(...)
-
+local styletype = ToEnumShortString(GAMESTATE:GetCurrentStyle():GetStyleType())
 local pn = ToEnumShortString(player)
 local pss = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
+
 
 local TapNoteScores = {
 	Types = { 'W0', 'W1', 'W2', 'W3', 'W4', 'W5', 'Miss' },
@@ -122,45 +123,58 @@ for index, RCType in ipairs(RadarCategories.Types) do
 		-- Format the Percentage string, removing the % symbol
 		percent = tonumber(percent)
 	else
-		percent = CalculateExScore(player, counts)
+		percent = CalculateExScore(player)
 	end
 
 	if index == 1 then
-    local showHardEX = true
+		local showHardEX = true
 
-		t[#t+1] = LoadFont(ThemePrefs.Get("ThemeFont") .. " Bold")..{
-			Name="Percent",
-			Text=("%.2f"):format(percent),
-			InitCommand=function(self)
-				self:horizalign(right):zoom(0.65)
-				self:x( ((controller == PLAYER_1) and -114) or 286 )
-				self:y(47)
-				
-				if SL[pn].ActiveModifiers.ShowExScore then
-					self:diffuse(Color.White)
-				else
-					self:diffuse( SL.JudgmentColors[SL.Global.GameMode][1] )
+		if (styletype == "TwoPlayersSharedSides") then
+			t[#t+1] = LoadFont(ThemePrefs.Get("ThemeFont") .. " Bold")..{
+				Name="Percent",
+				Text=("%.2f"):format(percent),
+				InitCommand=function(self)
+					self:horizalign(right):zoom(0.4)
+					self:x( ((controller == PLAYER_1) and -114) or 286 )
+					self:y(47)
+					self:diffuse( (controller == PLAYER_1) and Color.Blue or Color.Red)
 				end
-			end,
-			BeginCommand=function(self)
-				self:playcommand("Marquee")
-			end,
-      MarqueeCommand=function(self)
-			if not SL[pn].ActiveModifiers.ShowHardEXScore or not SL[pn].ActiveModifiers.ShowExScore then
-					return
+			}
+		else
+			t[#t+1] = LoadFont(ThemePrefs.Get("ThemeFont") .. " Bold")..{
+				Name="Percent",
+				Text=("%.2f"):format(percent),
+				InitCommand=function(self)
+					self:horizalign(right):zoom(0.4)
+					self:x( ((controller == PLAYER_1) and -114) or 286 )
+					self:y(47)
+
+					if SL[pn].ActiveModifiers.ShowExScore then
+						self:diffuse(Color.White)
+					else
+						self:diffuse( SL.JudgmentColors[SL.Global.GameMode][1] )
+					end
+				end,
+				BeginCommand=function(self)
+					self:playcommand("Marquee")
+				end,
+				MarqueeCommand=function(self)
+					if not SL[pn].ActiveModifiers.ShowHardEXScore or not SL[pn].ActiveModifiers.ShowExScore then
+						return
+					end
+					if showHardEX then
+						self:settext(("%.2f"):format(percentHardEX))
+						self:diffuse(color("#FF00CC"))
+						showHardEX = false
+					else
+						self:settext(("%.2f"):format(percent))
+						self:diffuse(Color.White)
+						showHardEX = true
+					end
+					self:sleep(2):queuecommand("Marquee")
 				end
-			if showHardEX then
-				self:settext(("%.2f"):format(percentHardEX))
-					self:diffuse(color("#FF00CC"))
-				showHardEX = false
-				else
-					self:settext(("%.2f"):format(percent))
-					self:diffuse(Color.White)
-				showHardEX = true
-				end
-				self:sleep(2):queuecommand("Marquee")
-      end
-		}
+			}
+		end
 	end
 
 	local possible = counts["total"..RCType]

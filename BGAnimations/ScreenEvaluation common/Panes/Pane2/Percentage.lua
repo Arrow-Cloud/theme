@@ -2,9 +2,14 @@ local player, controller = unpack(...)
 
 local percent = nil
 local diffuse = nil
-
-if SL[ToEnumShortString(player)].ActiveModifiers.ShowExScore then
-	percent = CalculateExScore(player, GetExJudgmentCounts(player))
+local styletype = ToEnumShortString(GAMESTATE:GetCurrentStyle():GetStyleType())
+if (styletype == "TwoPlayersSharedSides") then
+	stats = STATSMAN:GetCurStageStats():GetRoutineStageStats()
+	-- Format the Percentage string, removing the % symbol
+	percent = CalculateExScore(player)
+	diffuse = SL.JudgmentColors[SL.Global.GameMode][1]
+elseif SL[ToEnumShortString(player)].ActiveModifiers.ShowExScore then
+	percent = CalculateExScore(player)
 	diffuse = SL.JudgmentColors[SL.Global.GameMode][1]
 else
 	local stats = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
@@ -32,6 +37,8 @@ return Def.ActorFrame{
 			end
 			if ThemePrefs.Get("VisualStyle") == "Technique" then
 				self:diffusealpha(0.5)
+			elseif ThemePrefs.Get("VisualStyle") == "Transistor"  then
+				self:diffusealpha(0.7)
 			end
 		end
 	},

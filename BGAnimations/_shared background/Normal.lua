@@ -13,7 +13,7 @@ local anim_data = {
 local t = Def.ActorFrame {
 	InitCommand=function(self)
 		local style = ThemePrefs.Get("VisualStyle")
-		self:visible(not ThemePrefs.Get("RainbowMode") and style ~= "SRPG9" and style ~= "Technique")
+		self:visible(not ThemePrefs.Get("RainbowMode") and style ~= "SRPG10" and style ~= "Technique" and style ~= "Transistor")
 	end,
 	OnCommand=function(self) self:accelerate(0.8):diffusealpha(1) end,
 	HideCommand=function(self) self:visible(false) end,
@@ -21,7 +21,7 @@ local t = Def.ActorFrame {
 	VisualStyleSelectedMessageCommand=function(self)
 		local style = ThemePrefs.Get("VisualStyle")
 
-		if ThemePrefs.Get("RainbowMode") or style == "SRPG9" or style == "Technique" then
+		if ThemePrefs.Get("RainbowMode") or style == "SRPG10" or style == "Technique" or style == "Transistor" then
 			self:linear(0.6):diffusealpha(0):queuecommand("Hide")
 		else
 			self:visible(true):linear(0.6):diffusealpha(1)
@@ -32,7 +32,10 @@ local t = Def.ActorFrame {
 	end
 }
 
-for i=1,10 do
+-- Fewer full-screen alpha-blended layers here than the original 10 - each one is a
+-- continuously UV-scrolling, full-screen overdraw pass redrawn every frame on every
+-- menu screen, so the layer count directly drives fill-rate cost.
+for i=1,5 do
 	t[#t+1] = Def.Sprite {
 		Texture=file,
 		InitCommand=function(self)

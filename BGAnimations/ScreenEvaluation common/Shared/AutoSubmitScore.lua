@@ -1,6 +1,6 @@
 if not IsServiceAllowed(SL.GrooveStats.AutoSubmit) or GAMESTATE:IsCourseMode() then return end
 
-local NumEntries = 10
+local NumEntries = math.min(10, PREFSMAN:GetPreference("MaxHighScoresPerListForMachine"))
 
 local SetEntryText = function(rank, name, score, date, actor)
 	if actor == nil then return end
@@ -459,65 +459,43 @@ end
 local af = Def.ActorFrame {
 	Name="AutoSubmitMaster",
 	OnCommand=function(self)
-		-- dummy response for event overlay testing
-		 -- local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
-		 -- overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):visible(true)
-		 -- overlay:queuecommand("DirectInputToEventOverlayHandler")
+		-- local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
+		-- overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):visible(true)
+		-- overlay:queuecommand("DirectInputToEventOverlayHandler")
 
-		 -- local eventAf = overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):GetChild("P1EventAf")
-		 -- eventAf:playcommand("Show", {data={
-		 --	["rpg"] = {
-		 --		["name"] = "Stamina RPG 9",
-		 --		["scoreDelta"] = 10,
-		 --		["rateDelta"] = 10,
-		 --		["progress"] = {
-		 --			["statImprovements"] = {
-		 --				{
-		 --					["name"] = "tp",
-		 --					["gained"] = 12345,
-		 --				}
-		 --			},
-		 --			["questsCompleted"] = {
-		 --				{
-		 --					["title"] = "SN Daily I",
-		 --					["rewards"] = {
-		 --						{
-		 --							["type"] = "ad-hoc",
-		 --							["description"] = "Good Job!"
-		 --						}
-		 --					}
-		 --				}
-		 --			},
-		 --		},
-		 --		["result"] = "score-added",
-		 --		["rpgLeaderboard"] = {
-		 --			{
-		 --				["rank"] = 1,
-		 --				["name"] = "Player1",
-		 --				["score"] = 9900,
-		 --				["date"] ="2024-05-05 1:20:30",
-		 --				["isRival"] = false,
-		 --				["isSelf"] = false,
-		 --			},
-		 --			{
-		 --				["rank"] = 2,
-		 --				["name"] = "Player2",
-		 --				["score"] = 9800,
-		 --				["date"] ="2024-05-05 1:20:30",
-		 --				["isRival"] = true,
-		 --				["isSelf"] = false,
-		 --			},
-		 --			{
-		 --				["rank"] = 3,
-		 --				["name"] = "Player3",
-		 --				["score"] = 9700,
-		 --				["date"] ="2024-05-05 1:20:30",
-		 --				["isRival"] = false,
-		 --				["isSelf"] = true,
-		 --			}
-		 --		}
-		 --	}
-		 -- }})
+		-- local eventAf = overlay:GetChild("AutoSubmitMaster"):GetChild("EventOverlay"):GetChild("P1EventAf")
+		-- eventAf:playcommand("Show", {data={
+		-- 	["rpg"] = {
+		-- 		["name"] = "SRPG10",
+		-- 		["result"] = "score-added",
+		-- 		["rpgLeaderboard"] = {
+		-- 			{
+		-- 				["rank"] = 1,
+		-- 				["name"] = "Player1",
+		-- 				["score"] = 9900,
+		-- 				["date"] ="2024-05-05 1:20:30",
+		-- 				["isRival"] = false,
+		-- 				["isSelf"] = false,
+		-- 			},
+		-- 			{
+		-- 				["rank"] = 2,
+		-- 				["name"] = "Player2",
+		-- 				["score"] = 9800,
+		-- 				["date"] ="2024-05-05 1:20:30",
+		-- 				["isRival"] = true,
+		-- 				["isSelf"] = false,
+		-- 			},
+		-- 			{
+		-- 				["rank"] = 3,
+		-- 				["name"] = "Player3",
+		-- 				["score"] = 9700,
+		-- 				["date"] ="2024-05-05 1:20:30",
+		-- 				["isRival"] = false,
+		-- 				["isSelf"] = true,
+		-- 			}
+		-- 		}
+		-- 	}
+		-- }})
 	end,
 	RequestResponseActor(17, 50)..{
 		OnCommand=function(self)
@@ -580,8 +558,8 @@ local af = Def.ActorFrame {
 
 				self:GetParent():GetChild("P1SubmitText"):settext(THEME:GetString("GrooveStats", "Submitting"))
 				self:GetParent():GetChild("P2SubmitText"):settext(THEME:GetString("GrooveStats", "Submitting"))
-					
-				self:playcommand("MakeGrooveStatsRequest", {
+
+				self.pendingGrooveStatsRequest = {
 					endpoint="?action=scoreSubmit&"..NETWORK:EncodeQueryParameters(query),
 					method="POST",
 					headers=headers,
@@ -589,7 +567,20 @@ local af = Def.ActorFrame {
 					timeout=30,
 					callback=AutoSubmitRequestProcessor,
 					args=SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common"),
-				})
+				}
+				-- The engine appears to only actually dispatch one HTTP request at a time,
+				-- so whichever request we hand off first monopolizes that slot. GrooveStats
+				-- can take 10+ seconds to respond; ArrowCloud is normally near-instant. Give
+				-- ArrowCloud's ModuleCommand-triggered request (fired separately, slightly
+				-- later in screen-entry than this OnCommand) a head start so it isn't stuck
+				-- waiting behind a slow GrooveStats request that hasn't even been asked for yet.
+				self:sleep(0.5):queuecommand("SendGrooveStatsRequest")
+			end
+		end,
+		SendGrooveStatsRequestCommand=function(self)
+			if self.pendingGrooveStatsRequest then
+				self:playcommand("MakeGrooveStatsRequest", self.pendingGrooveStatsRequest)
+				self.pendingGrooveStatsRequest = nil
 			end
 		end
 	}

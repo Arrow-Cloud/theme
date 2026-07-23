@@ -539,7 +539,6 @@ UpdateItlData = function(player)
 		end
 
 		local data = DataForSong(player, prevData)
-
 		-- C-Modded a No CMOD chart. Don't save this score.
 		if data["noCmod"] and data["usedCmod"] then
 			return

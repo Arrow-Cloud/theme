@@ -1,6 +1,8 @@
 local player = Var "Player"
 local pn = ToEnumShortString(player)
 local mods = SL[pn].ActiveModifiers
+local style = GAMESTATE:GetCurrentStyle()
+local styletype = style and style:GetStyleType() or nil
 
 local available_fonts = GetComboFonts()
 local combo_font = (FindInTable(mods.ComboFont, available_fonts) ~= nil and mods.ComboFont) or available_fonts[1] or nil
@@ -80,6 +82,14 @@ local combo_bmt = LoadFont("_Combo Fonts/" .. combo_font .."/" .. combo_font)..{
 			self:addy(mods.MeasureCounterLookahead * 20)
 		elseif mods.BrokenRun and not mods.MeasureCounterUp and not mods.MeasureCounterLeft then
 			self:addy(16)
+		end
+
+		if styletype == "StyleType_TwoPlayersSharedSides" then 
+			if player == PLAYER_1 then
+				self:addx(-120):addy(-20)
+			else
+				self:addx(120):addy(-20)
+			end
 		end
 	end,
 	ComboCommand=function(self, params)
@@ -198,7 +208,13 @@ local combo_bmt = LoadFont("_Combo Fonts/" .. combo_font .."/" .. combo_font)..{
 				self:stopeffect():diffuse( Color.Red ) -- Miss Combo; no effect, always just #ff0000
 			end
 		elseif mods.ComboMode == "CurrentCombo" then
-			if mods.ComboColors == "Rainbow" and not combo_active and params.Combo then
+			if styletype == "StyleType_TwoPlayersSharedSides" then 
+				if player == PLAYER_1 then
+					self:stopeffect():diffuse(color("#ADD8E6"))
+				else
+					self:stopeffect():diffuse(color("#FFC0CB"))
+				end
+			elseif mods.ComboColors == "Rainbow" and not combo_active and params.Combo then
 				combo_active = true
 				self:rainbow()
 			elseif mods.ComboColors == "RainbowScroll" and not combo_active and params.Combo then

@@ -47,7 +47,7 @@ return {
 				end,
 
 				-- folder icon
-				LoadActor("./folder-solid.png")..{
+				LoadActor(THEME:GetPathG("", "folder-solid.png"))..{
 					Name="folder icon",
 					InitCommand=function(subself)
 						self.folder_icon = subself
@@ -71,7 +71,7 @@ return {
 				-- top text
 				Def.BitmapText{
 					Name="top text",
-				  Font=ThemePrefs.Get("ThemeFont") .. " Normal",
+					Font=ThemePrefs.Get("ThemeFont") .. " Normal",
 					InitCommand=function(subself)
 						self.top_text = subself
 						subself:zoom(1.15):xy(33,-8):diffusealpha(0)
@@ -91,7 +91,7 @@ return {
 				-- bottom text
 				Def.BitmapText{
 					Name="bottom text",
-				  Font=ThemePrefs.Get("ThemeFont") .. " Bold",
+					Font=ThemePrefs.Get("ThemeFont") .. " Bold",
 					InitCommand=function(subself)
 						self.bottom_text = subself
 						subself:zoom(0.8):y(10):diffusealpha(0):maxwidth(405)
@@ -161,7 +161,7 @@ return {
 
 			if self.kind == "SortBy" then
 				self.sort_by = info[2]
-			elseif self.kind == "ChangeMode" or self.kind == "ChangeStyle" then
+			elseif self.kind == "ChangeMode" or self.kind == "ChangeStyle" or self.kind == "ChangePlayMode" then
 				self.change = info[2]
 			else
 				self.new_overlay = info[2]

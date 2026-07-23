@@ -404,11 +404,13 @@ local Overrides = {
 				local song = GAMESTATE:GetCurrentSong()
 				if song then
 					for steps in ivalues( SongUtil.GetPlayableSteps(song) ) do
+						local choice
 						if steps:IsAnEdit() then
-							choices[#choices+1] = ("%s %i"):format(steps:GetDescription(), steps:GetMeter())
+							choice = ("%s\n%s %i"):format(steps:GetStepsType():gsub("%w+_%w+_", ""):lower(), steps:GetDescription(), steps:GetMeter())
 						else
-							choices[#choices+1] = ("%s %i"):format(THEME:GetString("Difficulty", ToEnumShortString(steps:GetDifficulty())), steps:GetMeter())
+							choice = ("%s\n%s %i"):format(steps:GetStepsType():gsub("%w+_%w+_", ""):lower(), THEME:GetString("Difficulty", ToEnumShortString(steps:GetDifficulty())), steps:GetMeter())
 						end
+						table.insert(choices, choice)
 					end
 				end
 			else
@@ -629,7 +631,7 @@ local Overrides = {
 		SelectType = "SelectMultiple",
 		Values = function()
 			-- GameplayExtras will be presented as a single OptionRow when WideScreen
-			local vals = { "ColumnFlashOnMiss", "Pacemaker", "NPSGraphAtTop" }
+			local vals = { "Pacemaker", "NPSGraphAtTop" }
 
 			-- if not WideScreen (traditional DDR cabinets running at 640x480)
 			-- remove the last two choices to be appended an additional OptionRow (GameplayExtrasB below).
@@ -798,11 +800,6 @@ local Overrides = {
 		end
 	},
 	-------------------------------------------------------------------------
-	TimingWindowOptions = {
-		SelectType = "SelectMultiple",
-		Values = { "HideEarlyDecentWayOffJudgments", "HideEarlyDecentWayOffFlash" }
-	},
-	-------------------------------------------------------------------------
 	MeasureLines = {
 		Values = { "Off", "Measure", "Quarter", "Eighth" },
 	},
@@ -830,17 +827,40 @@ local Overrides = {
 	-------------------------------------------------------------------------
 	TimingWindowOptions = {
 		SelectType = "SelectMultiple",
-		Values = { "HideEarlyDecentWayOffJudgments", "HideEarlyDecentWayOffFlash" }
+		Values = { "HideEarlyDecentWayOffJudgments", "HideEarlyDecentWayOffFlash", "ShowEarlyDecentWayOffColumn" }
+	},
+	-------------------------------------------------------------------------
+	JudgmentFlash = {
+		SelectType = "SelectMultiple",
+		Values = { "FlashMiss", "FlashWayOff", "FlashDecent", "FlashGreat", "FlashExcellent", "FlashFantastic" },
+		Choices = function()
+			local tns = "TapNoteScore"
+			return {
+				THEME:GetString(tns, "Miss"),
+				THEME:GetString(tns, "W5"),
+				THEME:GetString(tns, "W4"),
+				THEME:GetString(tns, "W3"),
+				THEME:GetString(tns, "W2"),
+				THEME:GetString(tns, "W1"),
+			}
+		end,
 	},
 	-------------------------------------------------------------------------
 	TimingWindows = {
 		Values = function()
-			return {
-				{true,true,true,true,true},
-				{true,true,true,true,false},
-				{true,true,true,false,false},
-				{false,false,true,true,true},
-			}
+			if SL.Global.GameMode == "Casual" then
+				return {
+					{true,true,true,true,true},
+					{true,true,true,false,false},
+				}
+			else
+				return {
+					{true,true,true,true,true},   -- None
+					{true,true,true,true,false},  -- W5s
+					{true,true,true,false,false}, -- W4s + W5s
+					{false,false,true,true,true}, -- W1s + W2s
+				}
+			end
 		end,
 		Choices = function()
 			local tns = "TapNoteScore" .. (SL.Global.GameMode=="ITG" and "" or SL.Global.GameMode)
@@ -987,7 +1007,7 @@ local Overrides = {
 	ScreenAfterPlayerOptions = {
 		Values = function()
 			local choices = { "Gameplay", "Select Music", "Options2", "Options3", "Options4"  }
-			if SL.Global.MenuTimer.ScreenSelectMusic < 1  or SL.Global.MusicWheelLocked == true then table.remove(choices, 2) end
+			if SL.Global.MenuTimer.ScreenSelectMusic < 1 or SL.Global.MusicWheelLocked == true then table.remove(choices, 2) end
 			return choices
 		end,
 		OneChoiceForAllPlayers = true,
@@ -1010,7 +1030,7 @@ local Overrides = {
 	ScreenAfterPlayerOptions2 = {
 		Values = function()
 			local choices = { "Gameplay", "Select Music", "Options1", "Options3", "Options4"  }
-			if SL.Global.MenuTimer.ScreenSelectMusic < 1  or SL.Global.MusicWheelLocked == true	 then table.remove(choices, 2) end
+			if SL.Global.MenuTimer.ScreenSelectMusic < 1 or SL.Global.MusicWheelLocked == true then table.remove(choices, 2) end
 			return choices
 		end,
 		OneChoiceForAllPlayers = true,
@@ -1034,7 +1054,7 @@ local Overrides = {
 	ScreenAfterPlayerOptions3 = {
 		Values = function()
 			local choices = { "Gameplay", "Select Music", "Options1", "Options2", "Options4"  }
-			if SL.Global.MenuTimer.ScreenSelectMusic < 1  or SL.Global.MusicWheelLocked == true then table.remove(choices, 2) end
+			if SL.Global.MenuTimer.ScreenSelectMusic < 1 or SL.Global.MusicWheelLocked == true then table.remove(choices, 2) end
 			return choices
 		end,
 		OneChoiceForAllPlayers = true,
@@ -1109,6 +1129,18 @@ local OptionRowDefault = {
 			self.LayoutType = Overrides[name].LayoutType or "ShowAllInRow"
 			self.SelectType = Overrides[name].SelectType or "SelectOne"
 			self.OneChoiceForAllPlayers = Overrides[name].OneChoiceForAllPlayers or false
+			if IsRoutine() then
+				local list = {
+					"NoteSkin",
+					"NoteSkinVariant",
+					"JudgmentGraphic",
+					"ComboFont",
+					"HoldJudgment",
+				}
+				if not FindInTable(name, list) then
+					self.OneChoiceForAllPlayers = true
+				end
+			end
 			self.ExportOnChange = Overrides[name].ExportOnChange or false
 			self.EnabledForPlayers = Overrides[name].EnabledForPlayers or function() return {PLAYER_1, PLAYER_2} end
 			self.ReloadRowMessages = Overrides[name].ReloadRowMessages or {}

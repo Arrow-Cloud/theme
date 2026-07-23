@@ -11,8 +11,8 @@ function GetHexColor( n, decorative, ITGdiff )
 	if decorative then
 		colorTable = SL.DecorativeColors
 	end
-	if style == "SRPG9" then
-		colorTable = SL.SRPG9.Colors
+	if style == "SRPG10" then
+		colorTable = SL.SRPG10.Colors
 	end
 	
 	if ITGdiff == "ITG" then 
@@ -28,7 +28,7 @@ function GetHexColor( n, decorative, ITGdiff )
 	local clr = ((n - 1) % #colorTable) + 1
 	if colorTable[clr] then
 		local c = color(colorTable[clr])
-		if (style == "SRPG9" or ITGdiff == "ITG") and not decorative then
+		if (style == "SRPG10" or ITGdiff == "ITG") and not decorative then
 			c = LightenColor(c)
 		end
 		return c

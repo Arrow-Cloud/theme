@@ -6,12 +6,14 @@ return Def.Quad{
 	Name="Footer",
 	InitCommand=function(self)
 		self:draworder(90):zoomto(_screen.w, 32):vertalign(bottom):y(32)
-		if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+		if ThemePrefs.Get("VisualStyle") == "SRPG10" then
 			self:diffuse(GetCurrentColor(true))
 		elseif DarkUI() then
 			self:diffuse(dark)
 		elseif ThemePrefs.Get("VisualStyle") == "Technique" then
 			self:diffusealpha(0)
+		elseif ThemePrefs.Get("VisualStyle") == "Transistor"  then
+			self:diffuse(GetCurrentColor(true)):diffusealpha(0.5)
 		else
 			self:diffuse(light)
 		end
@@ -21,7 +23,7 @@ return Def.Quad{
 		if topscreen == "ScreenSelectMusicCasual" then
 			self:diffuse(dark)
 		end
-		if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+		if ThemePrefs.Get("VisualStyle") == "SRPG10" then
 			self:diffuse(GetCurrentColor(true))
 		end
 		if ThemePrefs.Get("VisualStyle") == "Technique" then
@@ -31,15 +33,21 @@ return Def.Quad{
 				self:diffusealpha(0)
 			end
 		end
+		if ThemePrefs.Get("VisualStyle") == "Transistor"  then
+			self:diffuse(GetCurrentColor(true)):diffusealpha(0.5)
+		end
 	end,
 	ColorSelectedMessageCommand=function(self)
-		if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+		if ThemePrefs.Get("VisualStyle") == "SRPG10" then
 			self:diffuse(GetCurrentColor(true))
 		end
 	end,
 	VisualStyleSelectedMessageCommand=function(self)
 		if ThemePrefs.Get("VisualStyle") == "Technique" then
 			self:diffusealpha(0)
+		end
+		if ThemePrefs.Get("VisualStyle") == "Transistor"  then
+			self:diffuse(GetCurrentColor(true)):diffusealpha(0.5)
 		end
 	end,
 }

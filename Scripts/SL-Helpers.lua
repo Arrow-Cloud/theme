@@ -143,7 +143,7 @@ GetNotefieldX = function( player )
 	local PlayerOffset = SL[p].ActiveModifiers.NoteFieldOffsetX * (player == PLAYER_1 and -1 or 1)
 
 	local NumPlayersAndSides = ToEnumShortString( style:GetStyleType() )
-	return THEME:GetMetric("ScreenGameplay","Player".. p .. NumPlayersAndSides .."X") + PlayerOffset
+	return THEME:GetMetric(Branch.GameplayScreen(),"Player".. p .. NumPlayersAndSides .."X") + PlayerOffset
 end
 
 -- -----------------------------------------------------------------------
@@ -158,9 +158,8 @@ local NoteFieldWidth = {
 		double  = 512,
 		solo    = 384,
 		routine = 512,
-		-- couple and threepanel not supported in Simply Love at this time D:
-		-- couple = 256,
-		-- threepanel = 192
+		couple = 256,
+		threepanel = 192
 	},
 	-- pump's values are very similar to those used in dance, but curiously smaller
 	pump = {
@@ -168,6 +167,7 @@ local NoteFieldWidth = {
 		versus  = 250,
 		double  = 500,
 		routine = 500,
+		halfdouble = 300
 	},
 	-- These values for techno, para, and kb7 are the result of empirical observation
 	-- of the SM5 engine and should not be regarded as any kind of Truth.

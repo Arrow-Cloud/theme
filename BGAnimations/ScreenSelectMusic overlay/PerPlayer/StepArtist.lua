@@ -71,6 +71,9 @@ return Def.ActorFrame{
 			if GAMESTATE:IsCourseMode() then
 				self:x( _screen.cx - 210)
 				self:y(_screen.cy + 85)
+			elseif ThemePrefs.Get("PreferredStyle")=="auto" then
+				self:x( _screen.cx - 210)
+				self:y(_screen.cy + 28)
 			else
 				self:x( _screen.cx - 260)
 				self:y(_screen.cy + 40)
@@ -123,7 +126,7 @@ return Def.ActorFrame{
 
 	--STEPS label
 	LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal")..{
-		Text=GAMESTATE:IsCourseMode() and Screen.String("SongNumber"):format(1) or Screen.String("STEPS"),
+		Text=GAMESTATE:IsCourseMode() and THEME:GetString("ScreenSelectCourse", "SongNumber"):format(1) or Screen.String("STEPS"),
 		InitCommand=function(self)
 			self:diffuse(0,0,0,1):horizalign(left):x(30):maxwidth(40):zoom(0.8)
 		end,

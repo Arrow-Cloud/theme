@@ -42,15 +42,22 @@ local function CrownZoomForStyle(style)
 end
 
 local cur_style = 0
--- We reserve style indices:
--- 1/2: GrooveStats ITG / EX (ordering dynamic)
--- 3: RPG (event)
--- 4: ITL (event)
--- 5: ArrowCloud ITG
--- 6: ArrowCloud EX
--- 7: ArrowCloud HardEX
--- Rotation logic treats styles with has_data=false as skipped.
+-- We reserve style indices (0-based, matching all_data[style+1]):
+-- 0/1: GrooveStats ITG / EX (ordering dynamic)
+-- 2: RPG (event)
+-- 3: ITL (event)
+-- 4: ArrowCloud ITG
+-- 5: ArrowCloud EX
+-- 6: ArrowCloud HardEX
 local num_styles = 7
+
+-- Styles in the order they actually became available, built incrementally as each
+-- service (AC, GS) responds - never overwritten - so the rotation always reflects
+-- genuine arrival order instead of racing whichever response processor happens to
+-- run last. AC is normally fast and GS is normally slow, so this is usually AC's
+-- styles first, with GS's (and event) styles appended once GS catches up.
+local styleOrder = {}
+local styleOrderSet = {}
 
 local GrooveStatsBlue = color("#007b85")
 local RpgYellow = color("1,0.972,0.792,1")
@@ -76,11 +83,22 @@ local loop_seconds = 5
 local transition_seconds = 0.5
 local anim_seconds = transition_seconds
 local pendingRequests = 0
+-- Set when the first GS/AC response (of possibly several in-flight for this
+-- chart) has been handled, so we can show the scorebox as soon as any one
+-- service has data instead of waiting for every enabled service to respond.
+local firstResponseHandled = false
+-- True while a GrooveStats request is in flight for the current chart. GS is
+-- typically much slower to respond than ArrowCloud, so the box will often be
+-- showing already (via AC) while this is still true - used to keep the
+-- GrooveStats logo's loading glow going instead of prematurely settling it.
+local gsPending = false
 
 local all_data = {}
 
 local ResetAllData = function()
 	all_data = {}
+	styleOrder = {}
+	styleOrderSet = {}
 	SL[pn].Rival = {}
 	SL[pn].Rival.Score = 0
 	SL[pn].Rival.ExScore = 0
@@ -107,12 +125,18 @@ end
 -- Initialize the all_data object.
 ResetAllData()
 
--- Checks to see if any data is available.
 local hideGrooveStats = ThemePrefs.Get("HideGrooveStats")
-local HasData = function(idx)
-	-- idx 3 is ITL, which should still be shown even if GrooveStats is hidden
-	if hideGrooveStats and idx <= 2 then return false end
-	return all_data[idx+1] and all_data[idx+1].has_data
+
+-- Appends a style to the rotation order the first time it gets data, preserving
+-- genuine arrival order (see styleOrder declaration above). style_index 3 is ITL,
+-- which should still be shown even if GrooveStats itself is hidden; 0/1/2 (GS
+-- ITG/EX, RPG) are suppressed in that case, matching prior behavior.
+local function AppendStyle(style_index)
+	if hideGrooveStats and style_index <= 2 then return end
+	if not styleOrderSet[style_index] then
+		styleOrderSet[style_index] = true
+		styleOrder[#styleOrder+1] = style_index
+	end
 end
 
 local SetScoreData = function(data_idx, score_idx, rank, name, score, isSelf, isRival, isFail, isEx)
@@ -152,6 +176,7 @@ local SetScoreData = function(data_idx, score_idx, rank, name, score, isSelf, is
 end
 
 local LeaderboardRequestProcessor = function(res, master)
+	gsPending = false
   if master == nil then
 		Trace("[Scorebox] master is nil, aborting")
 		return
@@ -170,7 +195,8 @@ local LeaderboardRequestProcessor = function(res, master)
 		end
 		SetScoreData(1, 1, "", text, "", false, false, false, false)
 		pendingRequests = pendingRequests - 1
-		if pendingRequests <= 0 and master ~= nil then
+		if not firstResponseHandled and master ~= nil then
+			firstResponseHandled = true
 			master:queuecommand("CheckScorebox")
 		end
 		return
@@ -195,6 +221,7 @@ local LeaderboardRequestProcessor = function(res, master)
 	local bsBox = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("PerPlayer"):GetChild("ScoreBox" .. pn):GetChild("BoogieStatsLogo")
 	local bsExBox = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("PerPlayer"):GetChild("ScoreBox" .. pn):GetChild("BoogieStatsEXLogo")
 
+	gsBox:stopeffect()
 	if boogie then
 		style_color[0] = BoogieStatsPurple
 		style_color[1] = BoogieStatsPurple
@@ -216,15 +243,13 @@ local LeaderboardRequestProcessor = function(res, master)
 		-- These will get overwritten if we have any entries in the leaderboard below.
 		SetScoreData(1, 1, "", "No Scores", "", false, false, false, false)
 		SetScoreData(2, 1, "", "No Scores", "", false, false, false, false)
-		
+
 		all_data[1].has_data = false
 		all_data[2].has_data = false
-		
+
 		local showITG = SL["P"..n].ActiveModifiers.SBITGScore
 		local showEX = SL["P"..n].ActiveModifiers.SBExScore
 		local showEvents = SL["P"..n].ActiveModifiers.SBEvents
-		
-		cur_style = 0
 
 		local numEntries = 0
 		if SL["P"..n].ActiveModifiers.ShowExScore then
@@ -254,6 +279,7 @@ local LeaderboardRequestProcessor = function(res, master)
 					end
 				end
 			end
+			if all_data[1].has_data then AppendStyle(0) end
 
 			if showITG then
 				if data[playerStr]["gsLeaderboard"] then
@@ -280,6 +306,7 @@ local LeaderboardRequestProcessor = function(res, master)
 					end
 				end
 			end
+			if all_data[2].has_data then AppendStyle(1) end
 		else
 			-- Display the main GrooveStats leaderboard first if player is not using EX scoring.
 			if showITG then
@@ -307,6 +334,7 @@ local LeaderboardRequestProcessor = function(res, master)
 					end
 				end
 			end
+			if all_data[1].has_data then AppendStyle(0) end
 
 			if showEX then
 				if data[playerStr]["exLeaderboard"] then
@@ -333,12 +361,12 @@ local LeaderboardRequestProcessor = function(res, master)
 					end
 				end
 			end
+			if all_data[2].has_data then AppendStyle(1) end
 		end
 
 		-- Display event boxes first if they are applicable
 		if showEvents then
 			if data[playerStr]["rpg"] then
-				cur_style = 3
 				local numEntries = 0
 				local added = {}
 				SetScoreData(3, 1, "", "No Scores", "", false, false, false)
@@ -371,9 +399,9 @@ local LeaderboardRequestProcessor = function(res, master)
 					end
 				end
 			end
+			if all_data[3].has_data then AppendStyle(2) end
 
 			if data[playerStr]["itl"] then
-				cur_style = 4
 				local numEntries = 0
 				local added = {}
 				SetScoreData(4, 1, "", "No Scores", "", false, false, false)
@@ -410,10 +438,12 @@ local LeaderboardRequestProcessor = function(res, master)
 					end
 				end
 			end
+			if all_data[4].has_data then AppendStyle(3) end
 		end
  	end
 	pendingRequests = pendingRequests - 1
-	if pendingRequests <= 0 and master ~= nil then
+	if not firstResponseHandled and master ~= nil then
+		firstResponseHandled = true
 		master:queuecommand("CheckScorebox")
 	end
 end
@@ -430,6 +460,8 @@ local ArrowCloudRequestProcessor = function(res)
 	if type(parsed.leaderboards) ~= "table" then return end
 
 	-- Map ArrowCloud types to style indices (5..7); only process what the API returned.
+	-- We append to the rotation order in the same sequence parsed.leaderboards lists
+	-- them, so the pane reflects the order ArrowCloud itself chose to return them in.
 	local index_map = { ITG = 5, EX = 6, HardEX = 7 }
 	for _, board in ipairs(parsed.leaderboards) do
 		local style_index = index_map[board.type]
@@ -459,6 +491,7 @@ local ArrowCloudRequestProcessor = function(res)
 			for i=slot, NumEntries do
 				SetScoreData(style_index, i, "", "", "", false, false, false, isExType)
 			end
+			AppendStyle(style_index - 1)
 		end
 	end
 end
@@ -521,29 +554,37 @@ local af = Def.ActorFrame{
 	end,
 	LoopScoreboxCommand=function(self)
 		self:visible(true)
-		
-		local has_data = false
-		if #all_data == 0 then return end
-		for i=1,num_styles do
-			if all_data[i].has_data then
-				has_data = true
-				break
-			end
-		end
-		if not has_data then return end
+
+		if #styleOrder == 0 then return end
 
 		self:finishtweening()
 
 		-- On first display, use zero animation time so content appears instantly.
 		anim_seconds = self.isFirst and 0 or transition_seconds
-		
+
+		-- Walk styleOrder in the order styles actually became available (see its
+		-- declaration above), rather than a fixed 0..6 sweep. This is what makes the
+		-- first-shown style consistently "whichever responded first" (normally AC)
+		-- instead of racing whichever response processor happened to run last.
+		if self.isFirst then
+			self.isFirst = false
+			self.orderPos = 1
+		else
+			self.orderPos = (self.orderPos % #styleOrder) + 1
+		end
+		cur_style = styleOrder[self.orderPos]
+
 		for i=1,NumEntries do
 			local show = (i <= RowsForStyle(cur_style))
 			self:GetChild("Name"..i):visible(show)
 			self:GetChild("Score"..i):visible(show)
 			self:GetChild("Rank"..i):visible(show)
 		end
-		self:GetChild("GrooveStatsLogo"):stopeffect()
+		-- Leave the loading glow running while GS is still in flight (it's typically
+		-- much slower than AC, so the box is often already showing AC data here).
+		if not gsPending then
+			self:GetChild("GrooveStatsLogo"):stopeffect()
+		end
 		self:GetChild("BoogieStatsLogo"):stopeffect()
 		self:GetChild("BoogieStatsEXLogo"):stopeffect()
 		self:GetChild("SRPGLogo"):visible(true)
@@ -552,30 +593,12 @@ local af = Def.ActorFrame{
     self:GetChild("ACModeLabel"):visible(true)
 		self:GetChild("Outline"):visible(true)
 		self:GetChild("Background"):linear(anim_seconds/2):diffusealpha(1):visible(true)
-		
-		local start = cur_style
 
-		cur_style = (cur_style + 1) % num_styles
-		if cur_style ~= start or self.isFirst then
-			-- Make sure we have the next set of data.
-			while cur_style ~= start do
-				if HasData(cur_style) then
-					-- If this is the first time we're looping, update the start variable
-					-- since it may be different than the default
-					if self.isFirst then
-						start = cur_style
-						self.isFirst = false
-						-- Continue looping to figure out the next style.
-					else
-						break
-					end
-				end
-				cur_style = (cur_style + 1) % num_styles
-			end
-		end
-
-		-- Loop only if there's something new to loop to.
-		if start ~= cur_style then
+		-- Keep rotating if there's more than one style to show, or if another
+		-- service (typically GS) might still append more styles once it responds -
+		-- that way this loop picks up newly-available styles on its own next tick
+		-- rather than needing an external re-trigger.
+		if #styleOrder > 1 or pendingRequests > 0 then
 			self:sleep(loop_seconds):queuecommand("LoopScorebox")
 		end
 	end,
@@ -601,12 +624,12 @@ local af = Def.ActorFrame{
 				self:queuecommand("ChartParsed")
 			end
 		end,
-		ChartParsedCommand=function(self)
+		ChartParsedMessageCommand=function(self)
 			if not self.leaving_screen then
 				self:queuecommand("MakeRequest")
 			end
 		end,
-		MakeRequestCommand=function(self)				
+		MakeRequestCommand=function(self)
 			local sendRequest = false
 			local headers = {}
 			-- GrooveStats remains at 5 results regardless of AC's 7
@@ -637,8 +660,13 @@ local af = Def.ActorFrame{
 					return
 				end
 
-				-- Count pending requests so we only show the scorebox once all responses arrive.
+				-- pendingRequests just tracks how many services are still in flight (for
+				-- debugging/bookkeeping); the scorebox itself is shown as soon as the
+				-- first response (GS or AC, whichever answers first) has data - see
+				-- firstResponseHandled below.
 				pendingRequests = 0
+				gsPending = sendRequest
+				firstResponseHandled = false
 				if willDoArrowCloud then pendingRequests = pendingRequests + 1 end
 				if sendRequest then pendingRequests = pendingRequests + 1 end
 
@@ -657,7 +685,8 @@ local af = Def.ActorFrame{
 						onResponse = function(acres)
 							ArrowCloudRequestProcessor(acres)
 							pendingRequests = pendingRequests - 1
-							if pendingRequests <= 0 then
+							if not firstResponseHandled then
+								firstResponseHandled = true
 								self:GetParent():queuecommand("CheckScorebox")
 							end
 						end
@@ -700,12 +729,12 @@ local af = Def.ActorFrame{
 				if sendRequest then
 					-- GS HTTP request
 					self:playcommand("MakeGrooveStatsRequest", {
-            endpoint="?action=playerLeaderboards&"..NETWORK:EncodeQueryParameters(query),
-            method="GET",
-            headers=headers,
-            timeout=10,
-            callback=LeaderboardRequestProcessor,
-            args=self:GetParent(),
+						endpoint="?action=playerLeaderboards&"..NETWORK:EncodeQueryParameters(query),
+						method="GET",
+						headers=headers,
+						timeout=10,
+						callback=LeaderboardRequestProcessor,
+						args=self:GetParent(),
 					})
 				end
 			end
@@ -827,7 +856,7 @@ local af = Def.ActorFrame{
 	},
 	-- SRPG Logo
 	Def.Sprite{
-		Texture=THEME:GetPathG("", "_VisualStyles/SRPG9/logo_alt (doubleres).png"),
+		Texture=THEME:GetPathG("", "_VisualStyles/SRPG10/logo_alt (doubleres).png"),
 		Name="SRPGLogo",
 		InitCommand=function(self)
 			self:diffusealpha(0.4):zoom(0.07):diffusealpha(0)
