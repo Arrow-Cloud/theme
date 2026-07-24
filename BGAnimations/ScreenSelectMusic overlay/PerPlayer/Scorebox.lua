@@ -25,6 +25,16 @@ local NumEntries = 7
 -- afford a slightly larger, less cramped box instead of keeping it sized for GS.
 local hideGrooveStats = ThemePrefs.Get("HideGrooveStats")
 
+-- Whether the currently selected chart belongs to an ITL Online / Stamina RPG event
+-- pack (matched by pack/group name substring) - set fresh in MakeRequestCommand on
+-- every chart change. RPG/ITL leaderboard data only comes back as part of the same
+-- GrooveStats leaderboards response as GS's own ITG/EX scores (there's no separate
+-- endpoint for it), so even with GrooveStats leaderboards hidden we still need to
+-- fetch that response for these packs specifically - see MakeRequestCommand and
+-- AppendStyle below.
+local isItlEventPack = false
+local isRpgEventPack = false
+
 local border = hideGrooveStats and 8 or 5
 -- Row text x-offsets (below) are fixed distances from center, not proportional to
 -- width, so widening the box just adds slack on the right without moving the text -
@@ -153,11 +163,17 @@ end
 ResetAllData()
 
 -- Appends a style to the rotation order the first time it gets data, preserving
--- genuine arrival order (see styleOrder declaration above). style_index 3 is ITL,
--- which should still be shown even if GrooveStats itself is hidden; 0/1/2 (GS
--- ITG/EX, RPG) are suppressed in that case, matching prior behavior.
+-- genuine arrival order (see styleOrder declaration above). With GrooveStats
+-- leaderboards hidden, GS's own ITG/EX (0/1) are always suppressed, but RPG (2) and
+-- ITL (3) still get shown specifically when the current chart is from that event's
+-- pack (isRpgEventPack/isItlEventPack, set in MakeRequestCommand) - those two are
+-- fetched via the same GS response regardless of the hide preference.
 local function AppendStyle(style_index)
-	if hideGrooveStats and style_index <= 2 then return end
+	if hideGrooveStats then
+		if style_index == 0 or style_index == 1 then return end
+		if style_index == 2 and not isRpgEventPack then return end
+		if style_index == 3 and not isItlEventPack then return end
+	end
 	if not styleOrderSet[style_index] then
 		styleOrderSet[style_index] = true
 		styleOrder[#styleOrder+1] = style_index
@@ -725,11 +741,21 @@ local af = Def.ActorFrame{
 			-- which would otherwise cause this to spuriously re-fire and flash the
 			-- loading indicator while just browsing folder headers. Bail out entirely
 			-- unless a real song is currently selected.
-			if not GAMESTATE:GetCurrentSong() then
+			local currentSong = GAMESTATE:GetCurrentSong()
+			if not currentSong then
 				self:GetParent():finishtweening():visible(false)
 				return
 			end
-			local songTitle = GAMESTATE:GetCurrentSong():GetDisplayFullTitle()
+			local songTitle = currentSong:GetDisplayFullTitle()
+
+			-- ITL Online / Stamina RPG event packs get their leaderboards fetched (and,
+			-- with GrooveStats leaderboards hidden, exclusively rendered) even when the
+			-- player has GS leaderboards hidden - see isItlEventPack/isRpgEventPack's
+			-- declaration above.
+			local groupNameLower = string.lower(currentSong:GetGroupName() or "")
+			isItlEventPack = string.find(groupNameLower, "itl online", 1, true) ~= nil
+			isRpgEventPack = string.find(groupNameLower, "stamina rpg", 1, true) ~= nil
+			local isEventPack = isItlEventPack or isRpgEventPack
 
 			local sendRequest = false
 			local headers = {}
@@ -740,8 +766,13 @@ local af = Def.ActorFrame{
 
 			-- Don't even ask GrooveStats for leaderboards when the player has it
 			-- hidden - previously we still fired the request (and kept the loading
-			-- spinner going for it) even though its results would never be shown.
-			if not hideGrooveStats and SL[pn].ApiKey ~= "" and SL[pn].Streams.Hash ~= "" then
+			-- spinner going for it) even though its results would never be shown. The
+			-- one exception is ITL/RPG event packs: their leaderboard data only comes
+			-- back as part of this same GS response (no separate endpoint), so we still
+			-- need to fetch it for those regardless of the hide preference - AppendStyle
+			-- is what actually keeps GS's own ITG/EX scores out of the rotation in that
+			-- case.
+			if (not hideGrooveStats or isEventPack) and SL[pn].ApiKey ~= "" and SL[pn].Streams.Hash ~= "" then
 				query["chartHashP"..n] = SL[pn].Streams.Hash
 				headers["x-api-key-player-"..n] = SL[pn].ApiKey
 				sendRequest = true
