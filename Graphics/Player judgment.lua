@@ -1,11 +1,13 @@
 local player = Var "Player"
 local pn = ToEnumShortString(player)
 local mods = SL[pn].ActiveModifiers
-local sprite, spriteGhost
+local sprite, spriteGhost, coupleSprite
 
 if mods.JudgmentBack then
 	return Def.ActorFrame{Name="Player Judgment"}
 end
+local style = GAMESTATE:GetCurrentStyle()
+local styletype = style and style:GetStyleType() or nil
 
 ------------------------------------------------------------
 -- A profile might ask for a judgment graphic that doesn't exist
@@ -346,6 +348,18 @@ return Def.ActorFrame{
 
 			else
 				self:Load( THEME:GetPathG("", "_judgments/" .. file_to_load) )
+			end
+			-- local mini = mods.Mini:gsub("%%","") / 100
+			-- self:addx((mods.NoteFieldOffsetX * (1 + mini)) * 2)
+			-- self:addy((mods.NoteFieldOffsetY * (1 + mini)) * 2)
+			if styletype == "StyleType_TwoPlayersSharedSides" then 
+				if player == PLAYER_1 then
+					self:addy(10)
+					self:diffuse(Color.Blue)
+				else
+					self:addy(60)
+					self:diffuse(Color.Red)
+				end
 			end
 		end,
 		ResetCommand=function(self) self:finishtweening():stopeffect():visible(false) end

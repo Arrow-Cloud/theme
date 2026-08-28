@@ -4,7 +4,7 @@ local IsUltraWide = (GetScreenAspectRatio() > 21/9)
 local ShouldDisplayStatsForPlayer = function(player)
     local pn = ToEnumShortString(player)
     return (SL[pn].ActiveModifiers.DataVisualizations == "Step Statistics" or
-            (ThemePrefs.Get("EnableTournamentMode") and ThemePrefs.Get("StepStats") == "Show"))
+            ThemePrefs.Get("EnableTournamentMode") and ThemePrefs.Get("StepStats") == "Show")
 end
 
 local ShouldDisplayStats = function()

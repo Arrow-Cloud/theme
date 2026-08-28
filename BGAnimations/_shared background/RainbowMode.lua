@@ -15,13 +15,13 @@ local delay = 0
 local af1 = Def.ActorFrame{
 	InitCommand=function(self)
 		local style = ThemePrefs.Get("VisualStyle")
-		self:visible(ThemePrefs.Get("RainbowMode") and style ~= "SRPG9")
+		self:visible(ThemePrefs.Get("RainbowMode") and style ~= "SRPG10")
 	end,
 	OnCommand=function(self) self:Center():bob():effectmagnitude(0,50,0):effectperiod(8) end,
 	VisualStyleSelectedMessageCommand=function(self)
 		local style = ThemePrefs.Get("VisualStyle")
 
-		if ThemePrefs.Get("RainbowMode") and style ~= "SRPG9" then
+		if ThemePrefs.Get("RainbowMode") and style ~= "SRPG10" then
 			self:visible(true):linear(0.6):diffusealpha(1)
 		else
 			self:linear(0.6):diffusealpha(0):queuecommand("Hide")
@@ -65,7 +65,9 @@ local anim_data = {
 	a = {0.3,0.2,0.2,0.2,0.3,0.3,0.2,0.3,0.2,0.2,0.3,0.2,0.2,0.2,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2}
 }
 
-for i=1,25 do
+-- Fewer full-screen overdraw layers than the original 25 (see Normal.lua for why
+-- the layer count matters for perf) - still enough for the "spirograph" look.
+for i=1,12 do
 	af2[#af2+1] = LoadActor(file)..{
 		InitCommand=function(self)
 			self:zoom(1.3)

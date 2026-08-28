@@ -99,7 +99,7 @@ local af = Def.ActorFrame{
 
 		-- Ensure that SL[pn].Streams.ColumnCues is populated. This will skip
 		-- parsing if SL[pn].Streams is already up to date.
-		ParseChartInfo(steps, pn)
+		ParseColumnCues(steps, pn)
 
 		playerState = GAMESTATE:GetPlayerState(player)
 		columnCues = SL[pn].Streams.ColumnCues
@@ -176,14 +176,13 @@ for columnIndex=1,numColumns do
 			FlashCommand=function(self, params)
 				local flashDuration = params.duration
 				local clr = params.isMine and color("1,0,0,0.12") or color("0.3,1,1,0.12")
-				if mods.ColumnCues then
-					self:stoptweening()
-						:decelerate(fadeTime)
-						:diffuse(clr)
-						:sleep(flashDuration - 2*fadeTime)
-						:accelerate(fadeTime)
-						:diffuse(0,0,0,0)
-				end
+				self:stoptweening()
+					:decelerate(fadeTime)
+					:diffuse(clr)
+					:sleep(flashDuration - 2*fadeTime)
+					:accelerate(fadeTime)
+					:diffuse(0,0,0,0)
+
 				if flashDuration >= 5 and mods.ColumnCountdown then
 					breakTime = flashDuration
 					if text ~= nil then

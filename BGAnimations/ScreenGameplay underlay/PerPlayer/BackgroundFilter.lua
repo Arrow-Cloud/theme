@@ -5,6 +5,7 @@ local NoteFieldIsCentered = (GetNotefieldX(player) == _screen.cx)
 
 -- if no BackgroundFilter is necessary, it's safe to bail now
 if mods.BackgroundFilter == 0 then return end
+if IsRoutine() and player ~= GAMESTATE:GetMasterPlayerNumber() then return end
 
 return Def.Quad{
 	InitCommand=function(self)

@@ -63,7 +63,12 @@ local permitted_profile_settings = {
 
 	MeasureLines         = "string",
 
-	ColumnFlashOnMiss    = "boolean",
+	FlashMiss            = "boolean",
+	FlashWayOff          = "boolean",
+	FlashDecent          = "boolean",
+	FlashGreat           = "boolean",
+	FlashExcellent       = "boolean",
+	FlashFantastic       = "boolean",
 	SubtractiveScoring   = "boolean",
 	Pacemaker            = "boolean",
 	TrackEarlyJudgments  = "boolean",
@@ -95,6 +100,7 @@ local permitted_profile_settings = {
 
 	HideEarlyDecentWayOffJudgments = "boolean",
 	HideEarlyDecentWayOffFlash     = "boolean",
+	ShowEarlyDecentWayOffColumn    = "boolean",
 	
 	PackBanner           = "boolean",
 	StepInfo             = "boolean",

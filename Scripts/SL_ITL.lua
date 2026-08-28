@@ -1,6 +1,7 @@
 -- -----------------------------------------------------------------------
 IsItlSong = function(player)
 	local song = GAMESTATE:GetCurrentSong()
+	if song == nil then return false end
 	local song_dir = song:GetSongDir()
 	local group = string.lower(song:GetGroupName())
 	local pn = ToEnumShortString(player)
@@ -9,6 +10,7 @@ end
 
 UpdatePathMap = function(player, hash)
 	local song = GAMESTATE:GetCurrentSong()
+	if song == nil then return end
 	local song_dir = song:GetSongDir()
 	if song_dir ~= nil and #song_dir ~= 0 then
 		local pn = ToEnumShortString(player)
@@ -539,7 +541,6 @@ UpdateItlData = function(player)
 		end
 
 		local data = DataForSong(player, prevData)
-
 		-- C-Modded a No CMOD chart. Don't save this score.
 		if data["noCmod"] and data["usedCmod"] then
 			return

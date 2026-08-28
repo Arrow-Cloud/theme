@@ -8,12 +8,14 @@ return Def.ActorFrame{
 	Def.Quad{
 		InitCommand=function(self)
 			self:zoomto(_screen.w, 32):vertalign(top):x(_screen.cx)
-			if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+			if ThemePrefs.Get("VisualStyle") == "SRPG10" then
 				self:diffuse(GetCurrentColor(true))
 			elseif DarkUI() then
 				self:diffuse(dark)
 			elseif ThemePrefs.Get("VisualStyle") == "Technique" then
 				self:diffusealpha(0)
+			elseif ThemePrefs.Get("VisualStyle") == "Transistor"  then
+				self:diffuse(GetCurrentColor(true)):diffusealpha(0.5)
 			else
 				self:diffuse(light)
 			end
@@ -23,26 +25,32 @@ return Def.ActorFrame{
 			if SL.Global.GameMode == "Casual" and (topscreen == "ScreenEvaluationStage" or topscreen == "ScreenEvaluationSummary") then
 				self:diffuse(dark)
 			end
-			if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+			if ThemePrefs.Get("VisualStyle") == "SRPG10" then
 				self:diffuse(GetCurrentColor(true))
 			end
-			if ThemePrefs.Get("VisualStyle") == "Technique" then
+			if ThemePrefs.Get("VisualStyle") == "Technique" or ThemePrefs.Get("VisualStyle") == "Transistor" then
 				if topscreen == "ScreenSelectMusic" and not ThemePrefs.Get("RainbowMode") then
 					self:diffuse(0, 0, 0, 0.5)
 				else
 					self:diffusealpha(0)
 				end
 			end
+			if ThemePrefs.Get("VisualStyle") == "Transistor"  then
+				self:diffuse(GetCurrentColor(true)):diffusealpha(0.5)
+			end
 			self:visible(topscreen ~= "ScreenCRTTestPatterns")
 		end,
 		ColorSelectedMessageCommand=function(self)
-			if ThemePrefs.Get("VisualStyle") == "SRPG9" then
+			if ThemePrefs.Get("VisualStyle") == "SRPG10" then
 				self:diffuse(GetCurrentColor(true))
 			end
 		end,
 		VisualStyleSelectedMessageCommand=function(self)
 			if ThemePrefs.Get("VisualStyle") == "Technique" then
 				self:diffusealpha(0)
+			end
+			if ThemePrefs.Get("VisualStyle") == "Transistor"  then
+				self:diffuse(GetCurrentColor(true)):diffusealpha(0.5)
 			end
 		end,
 	},

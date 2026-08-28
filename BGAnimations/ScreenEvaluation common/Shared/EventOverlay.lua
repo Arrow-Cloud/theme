@@ -1,6 +1,6 @@
 local NumEntries = 13
 local RowHeight = 24
-local RpgYellow = color("#CDAA9B")
+local RpgYellow = color("#CFB185")
 local RpgText = Color.White
 local ItlPink = color("1,0.2,0.406,1")
 
@@ -11,14 +11,14 @@ local paneHeight = 360
 local borderWidth = 2
 
 local SetRpgStyle = function(eventAf)
-  eventAf:GetChild("MainBorder"):diffuse(RpgYellow)
-  eventAf:GetChild("BackgroundImage"):visible(true)
-  eventAf:GetChild("BackgroundColor"):diffuse(color("0,0,0.1,0.8"))
-  eventAf:GetChild("BackgroundColor2"):visible(true):diffuse(color("1,1,1,0.05")):faderight(0.1):fadeleft(0.1)
-  eventAf:GetChild("HeaderBorder"):diffuse(RpgYellow)
+	eventAf:GetChild("MainBorder"):diffuse(RpgYellow)
+	eventAf:GetChild("BackgroundImage"):visible(true)
+	eventAf:GetChild("BackgroundColor"):diffuse(color("0,0,0.1,0.8"))
+	eventAf:GetChild("BackgroundColor2"):visible(true):diffuse(color("1,1,1,0.05")):faderight(0.1):fadeleft(0.1)
+	eventAf:GetChild("HeaderBorder"):diffuse(RpgYellow)
 
-  local idx = SL.Global.ActiveColorIndex
-  local faction_name = SL.SRPG9.GetFactionName(idx)
+	local idx = SL.Global.ActiveColorIndex
+	local faction_name = SL.SRPG10.GetFactionName(idx)
 
   if faction_name == "Stamina Nation" then
     eventAf:GetChild("HeaderBackground")
@@ -285,7 +285,8 @@ local GetRpgPaneFunctions = function(eventAf, rpgData, player)
         ["scoreDelta"] = scoreDelta,
         ["rate"] = rate,
         ["rateDelta"] = rateDelta,
-        ["statImprovements"] = progress["statImprovements"],
+        ["statImprovements"] = progress and progress["statImprovements"] or nil,
+        ["questsCompleted"] = progress and progress["questsCompleted"] or nil,
       },
     })
   end
@@ -309,7 +310,7 @@ local GetRpgPaneFunctions = function(eventAf, rpgData, player)
   for text in ivalues(paneTexts) do
     table.insert(paneFunctions, function(eventAf)
       SetRpgStyle(eventAf)
-      eventAf:GetChild("Header"):settext(rpgData["name"])
+      eventAf:GetChild("Header"):settext(rpgData["name"]:gsub("SRPG", "Stamina RPG")..(isDoubles and "  Doubles" or ""))
       eventAf:GetChild("Leaderboard"):visible(false)
       local bodyText = eventAf:GetChild("BodyText")
 
@@ -379,7 +380,7 @@ local GetRpgPaneFunctions = function(eventAf, rpgData, player)
 
   table.insert(paneFunctions, function(eventAf)
     SetRpgStyle(eventAf)
-    eventAf:GetChild("Header"):settext(rpgData["name"])
+    eventAf:GetChild("Header"):settext(rpgData["name"]:gsub("SRPG", "Stamina RPG")..(isDoubles and "  Doubles" or ""))
     SetLeaderboardData(eventAf, rpgData["rpgLeaderboard"], "rpg")
     eventAf:GetChild("Leaderboard"):visible(true)
     eventAf:GetChild("BodyText"):visible(false)
@@ -856,9 +857,10 @@ for player in ivalues(PlayerNumber) do
     -- Main Black cement background
     Def.Sprite {
       Name = "BackgroundImage",
-      Texture = THEME:GetPathG("", "_VisualStyles/SRPG9/Overlay-BG.png"),
+      Texture = THEME:GetPathG("", "_VisualStyles/SRPG10/Overlay-BG.png"),
       InitCommand = function(self)
-        self:CropTo(paneWidth, paneHeight)
+        -- self:CropTo(paneWidth, paneHeight)
+        self:zoomto(paneWidth, paneHeight)
       end
     },
 

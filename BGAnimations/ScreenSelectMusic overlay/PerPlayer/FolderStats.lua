@@ -75,7 +75,13 @@ af2.BuildSongLampArrayCommand=function(self)
 	if SCREENMAN:GetTopScreen():GetName() == "ScreenSelectMusic" then
 		local profile = PROFILEMAN:GetProfile(player)
 		local profileName = profile:GetDisplayName()
-		if (not GAMESTATE:IsPlayerEnabled(player)) or profileName == "" or GAMESTATE:GetSortOrder() ~= 'SortOrder_Group' then 
+		local sortOrder = GAMESTATE:GetSortOrder()
+		-- Series sort groups packs that share a Pack.ini Series tag, falling back to
+		-- the plain group name for packs that don't set one - GetSelectedSection()
+		-- still returns something SONGMAN:GetSongsInGroup can use in that common case,
+		-- so treat it like Group sort instead of hiding the pane entirely (this was the
+		-- theme's default sort order, so the pane never showed for most players).
+		if (not GAMESTATE:IsPlayerEnabled(player)) or profileName == "" or (sortOrder ~= 'SortOrder_Group' and sortOrder ~= 'SortOrder_Series') then
 			self:visible(false)
 		else
 			self:visible(true)

@@ -19,10 +19,22 @@ local yOffset = 50
 local zoom_factor = 1 - scale( mods.Mini:gsub("%%","")/100, 0, 2, 0, 1)
 
 local available_graphics = GetHeldMissGraphics()
+local held_to_load = (FindInTable(mods.HeldGraphic, available_graphics) ~= nil and mods.HeldGraphic or available_graphics[1]) or "None"
 
-local file_to_load = (FindInTable(mods.HeldGraphic, available_graphics) ~= nil and mods.HeldGraphic or available_graphics[1]) or "None"
+local TNSFrames = {
+	TapNoteScore_W1 = 0,
+	TapNoteScore_W2 = 1,
+	TapNoteScore_W3 = 2,
+	TapNoteScore_W4 = 3,
+	TapNoteScore_W5 = 4,
+	TapNoteScore_Miss = 5,
+	TapNoteScore_CheckpointHit = -1,
+	TapNoteScore_CheckpointMiss = 5
+}
+local available_judgments = GetJudgmentGraphics()
+local judgments_to_load = (FindInTable(mods.JudgmentGraphic, available_judgments) ~= nil and mods.JudgmentGraphic or available_judgments[1]) or "None"
 
-if file_to_load == "None" then
+if held_to_load == "None" and judgments_to_load == "None" then
 	return Def.Actor{
 		InitCommand=function(self) self:visible(false) end
 	}
@@ -79,7 +91,7 @@ local IsReversedColumn = function(player, columnIndex)
 end
 
 for columnIndex=1,numColumns do
-	local sprite
+	local held_sprite, judgment_sprite
 	af[#af+1] = Def.ActorFrame{
 		Name="Column"..columnIndex,
 		InitCommand=function(self)
@@ -91,7 +103,8 @@ for columnIndex=1,numColumns do
 			self:addx((columnIndex - (numColumns/2 + 0.5))*2 * (width/numColumns) * spacing)
 					
 			local kids = self:GetChildren()
-			sprite = kids.HeldMiss
+			held_sprite = kids.HeldMiss
+			judgment_sprite = kids.Judgment
 		end,
 		JudgmentMessageCommand=function(self, param)
 			if param.Player ~= player then return end
@@ -100,31 +113,66 @@ for columnIndex=1,numColumns do
 
 			local tns = ToEnumShortString(param.TapNoteScore)
 			
-			-- support for "held miss" sprite on the "early miss" column
-			-- currently only a few judgment fonts do this... not sure if I should write a toggle
-			-- option in the future since turning it on for a judgment without the distinction
-			-- would accomplish nothing
-			if tns == "Miss" then
-				local isHeld = false
+			if tns == "Miss" and held_to_load ~= "None" then
 				for col,tapnote in pairs(param.Notes) do
 					local tnt = ToEnumShortString(tapnote:GetTapNoteType())
 					if tnt == "Tap" or tnt == "HoldHead" or tnt == "Lift" then
 						local tns = ToEnumShortString(param.TapNoteScore)
 						if tnt ~= "Lift" and tns == "Miss" and tapnote:GetTapNoteResult():GetHeld() and ("Column"..col) == self:GetName() then
-							sprite:visible(true)
-							sprite:finishtweening():stopeffect()
+							held_sprite:visible(true)
+							held_sprite:finishtweening():stopeffect()
 							-- this should match the custom JudgmentTween() from SL for 3.95
 							local mini = mods.Mini:gsub("%%","") / 100
-							sprite:zoom(0.8):zoomy(0.75 * (1 - mini/2)):decelerate(0.1):zoom(0.75):zoomy(0.75 * (1 - mini/2)):sleep(0.2):accelerate(0.2):zoom(0)
+							held_sprite:zoom(0.8):zoomy(0.75 * (1 - mini/2)):decelerate(0.1):zoom(0.75):zoomy(0.75 * (1 - mini/2)):sleep(0.2):accelerate(0.2):zoom(0)
 						end
 					end
+				end
+			end
+		end,
+		EarlyHitMessageCommand=function(self, param)
+			if param.Player ~= player then return end
+			if not param.TapNoteScore then return end
+			if param.HoldNoteScore then return end
+
+			local tns = ToEnumShortString(param.TapNoteScore)
+			
+			if (tns == "W4" or tns == "W5") and judgments_to_load ~= "None" and mods.ShowEarlyDecentWayOffColumn then
+				-- "frame" is the number we'll use to display the proper portion of the judgment sprite sheet
+				-- Sprite actors expect frames to be 0-indexed when using setstate() (not 1-indexed as is more common in Lua)
+				-- an early W1 judgment would be frame 0, a late W2 judgment would be frame 3, and so on
+				local frame = TNSFrames[ param.TapNoteScore ]
+				if not frame then return end
+
+				-- If the judgment font contains a graphic for the additional white fantastic window...
+				if judgment_sprite:GetNumStates() == 7 or judgment_sprite:GetNumStates() == 14 then
+					-- Everything outside of W1 needs to be shifted down a row if not in FA+ mode.
+					-- Some people might be using 2x7s in FA+ mode (by copying ITG graphics to FA+).
+					-- In that case, we need to shift the Way Off down to a Miss
+					frame = frame + 1
+				end
+
+
+				-- most judgment sprite sheets have 12 or 14 frames; 6/7 for early judgments, 6/7 for late judgments
+				-- some (the original 3.9 judgment sprite sheet for example) do not visibly distinguish
+				-- early/late judgments, and thus only have 6/7 frames
+				if judgment_sprite:GetNumStates() == 12 or judgment_sprite:GetNumStates() == 14 then
+					frame = frame * 2
+				end
+				
+				local tns = ToEnumShortString(param.TapNoteScore)
+				if ("Column"..(param.Column + 1)) == self:GetName() then
+					judgment_sprite:visible(true):setstate(frame)
+					judgment_sprite:finishtweening():stopeffect()
+					-- this should match the custom JudgmentTween() from SL for 3.95
+					local mini = mods.Mini:gsub("%%","") / 100
+					judgment_sprite:zoom(0.4):zoomy(0.325 * (1 - mini/2)):decelerate(0.1):zoom(0.325):zoomy(0.325 * (1 - mini/2)):sleep(0.2):accelerate(0.2):zoom(0)
 				end
 			end
 		end,
 		Def.Sprite{
 			Name="HeldMiss",
 			InitCommand=function(self)
-				-- animate(false) is needed so that this Sprite does not automatically
+				-- animate(false) is needed so that this held_sprite does not automatically
 				-- animate its way through all available frames; we want to control which
 				-- frame displays based on what judgment the player earns
 				self:animate(false):visible(false)
@@ -137,12 +185,28 @@ for columnIndex=1,numColumns do
 				-- because ScreenEdit is a mess and not worth bothering with.
 				if string.match(tostring(SCREENMAN:GetTopScreen()), "ScreenEdit") then
 					self:Load( THEME:GetPathG("", "_HeldMiss/Love") )
-
-				else
-					self:Load( THEME:GetPathG("", "_HeldMiss/" .. file_to_load) )
+				elseif held_to_load ~= "None" then
+					self:Load( THEME:GetPathG("", "_HeldMiss/" .. held_to_load) )
 				end
 			end,
-			ResetCommand=function(self) self:finishtweening():stopeffect():visible(false) end
+		},
+		Def.Sprite{
+			Name="Judgment",
+			InitCommand=function(self)
+				-- animate(false) is needed so that this held_sprite does not automatically
+				-- animate its way through all available frames; we want to control which
+				-- frame displays based on what judgment the player earns
+				self:animate(false):visible(false)
+				
+				-- if we are on ScreenEdit, judgment graphic is always "Love"
+				-- because ScreenEdit is a mess and not worth bothering with.
+				if string.match(tostring(SCREENMAN:GetTopScreen()), "ScreenEdit") then
+					self:Load( THEME:GetPathG("", "_judgments/Love") )
+
+				else
+					self:Load( THEME:GetPathG("", "_judgments/" .. judgments_to_load) )
+				end
+			end,
 		},
 	}
 end

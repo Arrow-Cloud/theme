@@ -2969,6 +2969,13 @@ moduleRegistration["ScreenSelectMusic"] = Def.ActorFrame {
                   side.status = "success"
                   side.message = "Linked successfully"
                   side.showQr = false
+                  -- Refresh the in-memory SL table (writeApiKey only touches disk) so the
+                  -- Select Music scorebox/leaderboard picks up the new key immediately,
+                  -- instead of waiting for the next profile load.
+                  if type(ParseArrowCloudIni) == "function" then
+                    ParseArrowCloudIni(side.player)
+                  end
+                  MESSAGEMAN:Broadcast("ChartParsed")
                 else
                   side.status = "failure"
                   side.message = "Write failed: " .. tostring(reason or "unknown")

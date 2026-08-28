@@ -17,10 +17,10 @@ local args = { Player=player, RowHeight=22, HideScores=true }
 
 args.NumHighScores = 10
 pane[#pane+1] = Def.Sprite{
-	Texture=THEME:GetPathG("","_VisualStyles/SRPG9/logo_main (doubleres).png"),
+	Texture=THEME:GetPathG("","_VisualStyles/SRPG10/logo_main (doubleres).png"),
 	Name="SRPG_Logo",
 	InitCommand=function(self)
-		self:zoom(0.08)
+		self:zoom(0.04)
 		self:addx(0):addy(120)
 		self:diffusealpha(0.3)
 	end,

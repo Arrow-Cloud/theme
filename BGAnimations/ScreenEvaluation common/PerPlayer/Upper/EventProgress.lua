@@ -25,18 +25,20 @@ local CreateRPGBody = function(rpgData)
 
 	local qualifierImprovements = {}
 	local statImprovements = {}
-	for improvement in ivalues(rpgData["statImprovements"]) do
-		if rpgStats[improvement.name] and improvement["gained"] > 0 then
-			if #rpgData["statImprovements"] >= 5 and (improvement.name == "tp" or improvement.name == "lp") then
-				table.insert(
-					qualifierImprovements,
-					string.format("+%d %s", improvement["gained"], string.upper(improvement["name"]))
-				)
-			else
-				table.insert(
-					statImprovements,
-					string.format("+%d %s", improvement["gained"], string.upper(improvement["name"]))
-				)
+	if rpgData["statImprovements"] then
+		for improvement in ivalues(rpgData["statImprovements"]) do
+			if rpgStats[improvement.name] and improvement["gained"] > 0 then
+				if #rpgData["statImprovements"] >= 5 and (improvement.name == "tp" or improvement.name == "lp") then
+					table.insert(
+						qualifierImprovements,
+						string.format("+%d %s", improvement["gained"], string.upper(improvement["name"]))
+					)
+				else
+					table.insert(
+						statImprovements,
+						string.format("+%d %s", improvement["gained"], string.upper(improvement["name"]))
+					)
+				end
 			end
 		end
 	end
@@ -188,7 +190,8 @@ logoFiles = findFiles(EventLogoDir,"png")
 if #logoFiles > 0 then	
 	logoImage = logoFiles[math.random(#logoFiles)]
 end
-local rpgLogoImage = THEME:GetPathG("", "_VisualStyles/SRPG9/logo_alt (doubleres).png")
+local rpgLogoImage = THEME:GetPathG("", "_VisualStyles/SRPG10/logo_alt (doubleres).png")
+local rpgDailyImages = {}
 
 local af = Def.ActorFrame{
 	Name="EventProgress"..pn,
@@ -202,21 +205,26 @@ local af = Def.ActorFrame{
 		if params.rpgData then
 			hasData = true
 			
-			-- check for dailies
+			-- check for dailies (TODO)
 			if params.rpgData["questsCompleted"] then
 				for quest in ivalues(params.rpgData["questsCompleted"]) do
 					if string.find(string.upper(quest["title"]), "UNAFFILIATED DAILY") then
-						rpgLogoImage = THEME:GetPathG("", "Stamina RPG/daily (doubleres).png")
+						rpgDailyImages[#rpgDailyImages+1] = THEME:GetPathG("", "Stamina RPG/daily (doubleres).png")
 					end
 					
 					if string.find(string.upper(quest["title"]), "SN DAILY") then
-						rpgLogoImage = THEME:GetPathG("", "Stamina RPG/daily_sn (doubleres).png")
+						rpgDailyImages[#rpgDailyImages+1] = THEME:GetPathG("", "Stamina RPG/daily_sn (doubleres).png")
 					elseif string.find(string.upper(quest["title"]), "DPRT DAILY") then
-						rpgLogoImage = THEME:GetPathG("", "Stamina RPG/daily_dprt (doubleres).png")
+						rpgDailyImages[#rpgDailyImages+1] = THEME:GetPathG("", "Stamina RPG/daily_dprt (doubleres).png")
 					elseif string.find(string.upper(quest["title"]), "FE DAILY") then
-						rpgLogoImage = THEME:GetPathG("", "Stamina RPG/daily_fe (doubleres).png")
+						rpgDailyImages[#rpgDailyImages+1] = THEME:GetPathG("", "Stamina RPG/daily_fe (doubleres).png")
+					elseif string.find(string.upper(quest["title"]), "NEP DAILY") then
+						rpgDailyImages[#rpgDailyImages+1] = THEME:GetPathG("", "Stamina RPG/daily_nep (doubleres).png")
 					end
 				end
+			end
+			if #rpgDailyImages > 0 then
+				self:queuecommand("DailyBadges")
 			end
 			
 			local rpgString = CreateRPGBody(params.rpgData)
@@ -298,6 +306,7 @@ local af = Def.ActorFrame{
 		end
 	},
 	
+	-- RPG logo
 	Def.Sprite {
 		Name="RPGLogo",
 		InitCommand=function(self)
@@ -330,6 +339,37 @@ local af = Def.ActorFrame{
 			self:wrapwidthpixels(paneWidth)
 			self:y(-paneHeight/2 + RowHeight * 3/2)
 		end,
+	},
+	
+	-- RPG Daily Badges
+	Def.Sprite {
+		DailyBadgesCommand=function(self)
+			if #rpgDailyImages >= 1 then
+				self:Load(rpgDailyImages[1])
+				self:visible(true)
+				self:zoom(0.5)
+				if chatModule then
+					self:x(-40*(i-1)):y(-110)
+				else
+					self:x(pn == "P1" and 100 or -100):y(-55)
+				end
+			end
+		end
+	},
+	
+	Def.Sprite {
+		DailyBadgesCommand=function(self)
+			if #rpgDailyImages >= 2 then
+				self:Load(rpgDailyImages[2])
+				self:visible(true)
+				self:zoom(0.5)
+				if chatModule then
+					self:x(-40+32*(i-1)):y(-110)
+				else
+					self:x(pn == "P1" and 100 or -100):y(-55+32)
+				end
+			end
+		end
 	},
 }
 

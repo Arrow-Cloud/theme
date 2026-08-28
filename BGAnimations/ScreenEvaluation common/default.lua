@@ -19,11 +19,6 @@ if SL.Global.GameMode ~= "Casual" then
 		EventOverlayInputHandler = LoadActor("./Shared/EventInputHandler.lua")
 		SCREENMAN:GetTopScreen():AddInputCallback(InputHandler)
 		PROFILEMAN:SaveMachineProfile()
-		
-		if SL.NewDownloadsCompleted then
-			SL.NewDownloadsCompleted = false
-			SCREENMAN:GetTopScreen():SetNextScreenName("ScreenReloadSongsSSM")
-		end
 	end
 	t.DirectInputToEngineCommand=function(self)
 		SCREENMAN:GetTopScreen():RemoveInputCallback(EventOverlayInputHandler)
@@ -40,10 +35,6 @@ if SL.Global.GameMode ~= "Casual" then
 		for player in ivalues(PlayerNumber) do
 			SCREENMAN:set_input_redirected(player, true)
 		end
-	end
-	t.NewDownloadsCompletedMessageCommand=function(self, params)
-		SL.NewDownloadsCompleted = false
-		SCREENMAN:GetTopScreen():SetNextScreenName("ScreenReloadSongsSSM")
 	end
 else
 	t.OnCommand=function(self)
