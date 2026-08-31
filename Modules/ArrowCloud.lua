@@ -1695,10 +1695,11 @@ end
 -- position, once we've heard back (see self.pendingResultResponses) from everyone who's
 -- actually submitting this round -- so a dialog normally appears already in its correct spot
 -- and never has to move afterward (the one exception: see the Reposition branches below).
--- Tracks "already shown" per player (self.resultDialogVisible), not with a single one-shot
--- flag, so this can be called again later without re-showing anyone who's already up. `force`
--- bypasses the "wait for everyone" check as a safety net in case some response never comes
--- back.
+-- Tracks "already handled" per player (self.resultDialogShown, permanent for the visit) rather
+-- than a single one-shot flag or self.resultDialogVisible (which the dismiss handler resets),
+-- so this can be called again later without re-showing a dialog the player already closed.
+-- `force` bypasses the "wait for everyone" check as a safety net in case some response never
+-- comes back.
 local function tryShowResultDialogs(self, force)
   if not force and next(self.pendingResultResponses) ~= nil then return end
 
@@ -1706,24 +1707,34 @@ local function tryShowResultDialogs(self, force)
   local p2Paths = self.pendingResultImages.P2
   local p1Has = p1Paths and #p1Paths > 0
   local p2Has = p2Paths and #p2Paths > 0
-  local p1Shown = self.resultDialogVisible.P1
-  local p2Shown = self.resultDialogVisible.P2
+  -- "Handled" (self.resultDialogShown) means "already shown at least once this visit" and is
+  -- permanent -- unlike self.resultDialogVisible (which the dismiss handler resets to false
+  -- the moment the player closes it), it must NOT flip back once set, or a later call here
+  -- (e.g. the force-timeout, or the other player's response arriving) would see "has images,
+  -- not shown" and pop the just-dismissed dialog back up.
+  local p1Handled = self.resultDialogShown.P1
+  local p2Handled = self.resultDialogShown.P2
 
-  -- Nothing new to do: nobody has images, or whoever does already has their dialog up.
+  -- Nothing new to do: nobody has images, or whoever does has already been handled.
   -- Per-player (not a single one-shot flag) so a force-timeout rescuing one player's dialog
   -- can't permanently block the other's later, genuinely-successful response from showing.
-  if (not p1Has or p1Shown) and (not p2Has or p2Shown) then return end
+  if (not p1Has or p1Handled) and (not p2Has or p2Handled) then return end
 
-  -- Once this call resolves, will both players end up with a dialog on screen?
-  local bothWillBeVisible = (p1Has or p1Shown) and (p2Has or p2Shown)
+  -- Once this call resolves, will both players simultaneously have a dialog on screen? A
+  -- player only counts if they're about to be freshly shown, or are still currently visible
+  -- (not one who was shown and already dismissed).
+  local p1WillBeUp = (p1Has and not p1Handled) or self.resultDialogVisible.P1
+  local p2WillBeUp = (p2Has and not p2Handled) or self.resultDialogVisible.P2
+  local bothWillBeVisible = p1WillBeUp and p2WillBeUp
 
-  if p1Has and not p1Shown then
+  if p1Has and not p1Handled then
     local dialog = self:GetChild("P1ACDialog")
     if dialog then
+      self.resultDialogShown.P1 = true
       self.resultDialogVisible.P1 = true
       dialog:playcommand("ShowDialog", { images = p1Paths, mode = bothWillBeVisible and "left" or "center" })
     end
-  elseif p1Shown and bothWillBeVisible then
+  elseif self.resultDialogVisible.P1 and bothWillBeVisible then
     -- P1 was already showing alone (centered) and P2's dialog is about to join it -- shift P1
     -- over to make room. Only reachable via the force-timeout rescuing one player while the
     -- other's response is merely slow, not dead -- rare enough that a position change here
@@ -1733,13 +1744,14 @@ local function tryShowResultDialogs(self, force)
     if dialog then dialog:playcommand("Reposition", { mode = "left" }) end
   end
 
-  if p2Has and not p2Shown then
+  if p2Has and not p2Handled then
     local dialog = self:GetChild("P2ACDialog")
     if dialog then
+      self.resultDialogShown.P2 = true
       self.resultDialogVisible.P2 = true
       dialog:playcommand("ShowDialog", { images = p2Paths, mode = bothWillBeVisible and "right" or "center" })
     end
-  elseif p2Shown and bothWillBeVisible then
+  elseif self.resultDialogVisible.P2 and bothWillBeVisible then
     local dialog = self:GetChild("P2ACDialog")
     if dialog then dialog:playcommand("Reposition", { mode = "right" }) end
   end
@@ -1756,6 +1768,7 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   InitCommand = function(self)
     self.waiting = { P1 = false, P2 = false }
     self.resultDialogVisible = { P1 = false, P2 = false }
+    self.resultDialogShown = { P1 = false, P2 = false }
     self.pendingResultResponses = {}
     self.pendingResultImages = {}
     self.resultDialogInputHandler = nil
@@ -1798,6 +1811,7 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     self.armed = true
     -- reset dialog visibility guards on each screen entry
     self.resultDialogVisible = { P1 = false, P2 = false }
+    self.resultDialogShown = { P1 = false, P2 = false }
     self.pendingResultResponses = {}
     self.pendingResultImages = {}
 
@@ -2168,6 +2182,7 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
   InitCommand = function(self)
     self.waiting = { P1 = false, P2 = false }
     self.resultDialogVisible = { P1 = false, P2 = false }
+    self.resultDialogShown = { P1 = false, P2 = false }
     self.pendingResultResponses = {}
     self.pendingResultImages = {}
     self.resultDialogInputHandler = nil
@@ -2210,6 +2225,7 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
     self.armed = true
     -- reset dialog visibility guards on each screen entry
     self.resultDialogVisible = { P1 = false, P2 = false }
+    self.resultDialogShown = { P1 = false, P2 = false }
     self.pendingResultResponses = {}
     self.pendingResultImages = {}
 
