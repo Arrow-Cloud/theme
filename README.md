@@ -71,8 +71,14 @@ non-endless courses only):
   processed from the front of the file one at a time, since each successful removal shifts the remaining line
   indices. A small pending-count badge (`ACPendingP1`/`ACPendingP2`) shows how many scores are queued, with a
   "(FULL)" suffix at capacity.
-- A dismissible dialog actor (`createACDialogActor`) is available for rendering backend-controlled messages on
-  the Evaluation screen, using the same input-redirection/dismissal pattern as other Simply Love prompts.
+- **Result images**: a `200` response body may include a `resultImages` array of image URLs (usually just one —
+  e.g. a pack-leaderboard placement card). When present, each image is downloaded via
+  `NETWORK:HttpRequest{ downloadFile = ... }` into the engine's `/Downloads/` sandbox as
+  `ArrowCloud_<P1|P2>_Result<n>.<ext>`, overwriting whatever was saved for that slot on the previous submission,
+  then shown in a dismissible modal (`createACResultImageDialogActor`) with left/right paging when there's more
+  than one image. A `204` response has no body and shows nothing. P1 and P2 each get their own independent
+  dialog instance (`P1ACDialog`/`P2ACDialog`), positioned on that player's half of the screen in versus mode —
+  one player dismissing their dialog doesn't affect the other's.
 
 ### Hard EX Score
 
