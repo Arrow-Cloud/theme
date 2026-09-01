@@ -1656,8 +1656,12 @@ local function createACResultImageDialogActor(name, player)
       -- &MENURiGHT; markers (not literal glyphs) resolve to real triangle-icon codepoints via
       -- the engine's font-alias system, and are available in any font since every font imports
       -- "Common default" -- a literal arrow character isn't mapped in any font here and falls
-      -- back to the theme's "missing glyph" box.
-      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+      -- back to the theme's "missing glyph" box. Deliberately hardcoded to "Common" rather than
+      -- ThemePrefs.Get("ThemeFont") like EventOverlay/ACLeaderboard do -- ThemeFont is a custom
+      -- theme preference row that isn't guaranteed to exist on every deployment, and
+      -- ThemePrefs.Get() returning nil there breaks LoadFont's concatenation at module load
+      -- time (matching this file's existing convention elsewhere, e.g. the Counter font above).
+      LoadFont("Common" .. " Normal") .. {
         Name = "LeftArrow",
         Text = "&MENULEFT;",
         InitCommand = function(self)
@@ -1672,7 +1676,7 @@ local function createACResultImageDialogActor(name, player)
           self:queuecommand("Bounce")
         end,
       },
-      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+      LoadFont("Common" .. " Normal") .. {
         Name = "RightArrow",
         Text = "&MENURiGHT;",
         InitCommand = function(self)
