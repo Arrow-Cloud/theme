@@ -15,46 +15,7 @@ local MODULE_TAG = "[ArrowCloud-SLmodule]"
 local ENABLE_PENDING_SCORES = true -- Enable saving failed score submissions for retry when offline
 local MAX_PENDING_SCORES = 50      -- Maximum number of pending scores stored per player
 
--- Dialog Layout Configuration
---
--- Customize the leaderboard dialog appearance by modifying these values:
---
--- ROW_SPACING: Controls vertical distance between leaderboard entries (default: 18px)
---   - Increase for more spaced out rows, decrease for tighter display
---
--- DIALOG_PADDING: Inner margin around dialog content (default: 40px)
---   - Affects overall dialog size and text positioning
---
--- FONT_ZOOM: Text size multiplier for all dialog text (default: 0.7)
---   - Increase for larger text, decrease for smaller text
---
--- Column positioning (X coordinates):
---   RANK_COLUMN_X: Position of rank numbers (default: 24px from left)
---   ALIAS_COLUMN_X: Position of player names (default: 30px from left)
---   SCORE_COLUMN_OFFSET: Distance from right edge for scores (default: 64px)
---   DELTA_COLUMN_OFFSET: Distance from right edge for delta values (default: 0px)
---
--- Score Type Color Coding:
---   Scores are automatically colored based on their type (ITG=white, EX=blue, H.EX=pink)
---   Self/rival highlighting takes priority over score type colors when applicable
---
-local DIALOG_LAYOUT = {
-  ROW_SPACING = 18,         -- Vertical spacing between leaderboard rows
-  DIALOG_PADDING = 40,      -- Inner padding for dialog content
-  FONT_ZOOM = 0.7,          -- Font size multiplier for all text
-  RANK_COLUMN_X = 24,       -- X position for rank column
-  ALIAS_COLUMN_X = 30,      -- X position for alias/name column
-  SCORE_COLUMN_OFFSET = 64, -- Offset from right edge for score column
-  DELTA_COLUMN_OFFSET = 0,  -- Offset from right edge for delta column
-
-  -- Vertical positioning for dialog elements
-  TITLE_Y_OFFSET = 28,       -- Distance from top edge for title text
-  FREEFORM_Y_OFFSET = 60,    -- Distance from top edge for freeform text (2-line capable)
-  MODE_LABEL_Y_OFFSET = 118, -- Distance from top edge for mode label
-  BOARD_Y_OFFSET = 140       -- Distance from top edge for leaderboard start
-}
-
--- luacheck: globals GAMESTATE PREFSMAN THEME SL PLAYER_1 PLAYER_2 STATSMAN CRYPTMAN PROFILEMAN IniFile NETWORK IsHumanPlayer FormatPercentScore CalculateExScore GetTimingWindow GetWorstJudgment BinaryToHex clamp Trace ToEnumShortString ivalues MESSAGEMAN
+-- luacheck: globals GAMESTATE PREFSMAN THEME SL PLAYER_1 PLAYER_2 STATSMAN CRYPTMAN PROFILEMAN IniFile NETWORK IsHumanPlayer FormatPercentScore CalculateExScore GetTimingWindow GetWorstJudgment BinaryToHex clamp Trace ToEnumShortString ivalues MESSAGEMAN FILEMAN SCREENMAN
 
 -- forward declaration so isEligible can reference it
 local debugPrint
@@ -277,26 +238,6 @@ end
 
 -- -------------------------------------------------------------------------------------------------
 
--- Centralized sizing helpers for the Arrow Cloud dialog overlay
-local function ACDialogSize()
-  -- base margins from screen and max intended size (tweak here to affect all uses)
-  local maxW, maxH = 300, 300
-  local marginW, marginH = 80, 120
-  local w = math.min(_screen.w - marginW, maxW)
-  local h = math.min(_screen.h - marginH, maxH)
-  return w, h
-end
-
-local function ACDialogWrapWidth()
-  -- compute a safe wrap width based on dialog width and internal padding
-  local w = ACDialogSize()
-  local paddingLeft, paddingRight = 10, 10
-  local wrap = w - (paddingLeft + paddingRight)
-  -- clamp to reasonable bounds
-  if wrap < 160 then wrap = 160 end
-  return wrap
-end
-
 -- -------------------------------------------------------------------------------------------------
 -- Eligibility checks (refactored from ValidForGrooveStats in SL-Helpers-GrooveStats.lua)
 -- We only submit scores when a collection of sanity conditions are satisfied.  These are
@@ -515,42 +456,11 @@ local function parseArrowCloudResponse(jsonString)
     return nil
   end
 
-  if not decoded or type(decoded) ~= "table" or not decoded.eventLeaderboards then
+  if not decoded or type(decoded) ~= "table" then
     return nil
   end
 
   return decoded
-end
-
--- Format delta values for leaderboard display
--- Returns formatted text and color for delta values
-local function formatDelta(deltaValue)
-  local deltaText = ""
-  local deltaColor = { 1, 1, 1, 1 } -- default white
-  if deltaValue == nil then
-    return deltaText, deltaColor
-  end
-
-  if deltaValue then
-    local numValue = tonumber(deltaValue)
-    if numValue and numValue == 0 then
-      deltaText = "--"
-    elseif numValue and numValue > 0 then
-      deltaText = "+" .. tostring(numValue)
-      deltaColor = { 0.4, 1, 0.4, 1 } -- green for positive
-    elseif numValue and numValue < 0 then
-      deltaText = tostring(numValue)  -- already has minus sign
-      deltaColor = { 1, 0.4, 0.4, 1 } -- red for negative
-    else
-      deltaText = "--"                -- fallback for invalid numbers
-    end
-  else
-    deltaText = "--"
-  end
-
-  debugPrint("Formatted delta value: " .. deltaText)
-
-  return deltaText, deltaColor
 end
 
 -- JSON encoding utilities
@@ -904,6 +814,60 @@ local function sendScoreData(data, apiKey, hash, player, isSilent, onComplete)
       end
     end
   }
+end
+
+-- Pull a file extension off a URL's path (ignoring any query string), defaulting to "png"
+-- since that's what result images are typically served as.
+local function getUrlExtension(url)
+  if type(url) ~= "string" then return "png" end
+  local pathPart = url:match("^[^%?]+") or url
+  local ext = pathPart:match("%.([%a%d]+)$")
+  if ext and #ext > 0 and #ext <= 5 then
+    return ext:lower()
+  end
+  return "png"
+end
+
+-- Downloads each URL in `urls` (from a submission response's "resultImages") into the engine's
+-- /Downloads/ sandbox, one at a time, using a fixed per-player/per-index filename
+-- ("ArrowCloud_<P1|P2>_Result<n>.<ext>") so storage stays bounded rather than accumulating a new
+-- file per submission -- NETWORK:HttpRequest's downloadFile option truncates and overwrites an
+-- existing file at that path, so this is safe. (Getting the *displayed* Sprite to actually pick up
+-- the new bytes on a reused path is a separate problem -- Sprite:Load() caches by path/texture ID
+-- and won't notice the file changed -- handled at display time in
+-- createACResultImageDialogActor's applyContent via an explicit Load(nil) before reloading.)
+-- Calls onComplete(paths) once every URL has been attempted, where `paths` only contains the
+-- local /Downloads/ paths that downloaded successfully.
+local function downloadResultImages(urls, player, onComplete)
+  local pn = player and ToEnumShortString(player) or "P1"
+  local successfulPaths = {}
+
+  local function attempt(index)
+    local url = urls[index]
+    if not url then
+      onComplete(successfulPaths)
+      return
+    end
+
+    local filename = "ArrowCloud_" .. pn .. "_Result" .. index .. "." .. getUrlExtension(url)
+    local localPath = "/Downloads/" .. filename
+
+    NETWORK:HttpRequest {
+      url = url,
+      downloadFile = filename,
+      onResponse = function(response)
+        if type(response) == "table" and response.statusCode == 200 then
+          table.insert(successfulPaths, localPath)
+        else
+          debugPrint("ArrowCloud: failed to download result image " .. tostring(index) ..
+            " (status=" .. tostring(type(response) == "table" and response.statusCode or "?") .. ")")
+        end
+        attempt(index + 1)
+      end
+    }
+  end
+
+  attempt(1)
 end
 
 -- Retry pending scores from previous sessions.
@@ -1440,292 +1404,193 @@ local function buildCourseResultData(player, style)
 end
 
 -- ---------------------------------------------------------------------------------------------
--- Simple dialog overlay used to present backend-controlled messages.
--- For now, it renders placeholder content and is dismissible via Back/Start/Select.
--- This mirrors the input redirection and dismissal behavior used by other prompts.
+-- Modal that displays the "resultImages" returned by a score submission response, with
+-- left/right paging when there's more than one image (no paging controls for a single image).
+-- Built once per player (see the "P1ACDialog"/"P2ACDialog" instances below) so P1 and P2 can
+-- each show their own dialog independently in versus mode. Unlike the ITL/SRPG EventOverlay's
+-- per-player panes (which position by GAMESTATE:GetNumSidesJoined()), this dialog's left/center/
+-- right position is decided once, up front, by tryShowResultDialogs (in the
+-- ScreenEvaluationStage/Nonstop registration below) after hearing back from every submitting
+-- player -- a dialog is shown for the first time already in its final position (single visible
+-- dialog centered, both split left/right) and never has to move afterward. Input
+-- routing/dismissal for both instances is also owned by that registration
+-- (DirectInputToACResultDialogCommand): either player's Back/Start/Select closes both dialogs
+-- together, while MenuLeft/MenuRight paging stays scoped to the pressing player's own dialog.
 
-local function createACDialogActor(name)
-  local af
-  local dialogData = nil            -- will hold API response data
-  local currentLeaderboardIndex = 1 -- Track which leaderboard we're showing
+local RESULT_DIALOG_SIDE_OFFSET = 200
 
+-- Manual size tweak applied on top of the fit-to-bounds scale below, to compensate for the
+-- theme's virtual-to-display scaling making result images render larger than intended.
+-- Adjust this directly to make the dialog bigger/smaller; aspect ratio is always preserved.
+local RESULT_IMAGE_MANUAL_SCALE = 0.7
 
+-- Upper bound on the displayed image size (it's scaled down to fit within this, preserving
+-- aspect ratio, but never scaled up past its native size).
+local function ACImageDialogMaxSize()
+  local maxW, maxH = 360, 440
+  local marginW, marginH = 40, 40
+  local w = math.min(_screen.w - marginW, maxW)
+  local h = math.min(_screen.h - marginH, maxH)
+  return w, h
+end
 
-  -- row highlight colors (aligned with scorebox styling)
-  local function maybeColor(hex, fallback)
-    local c = _G and rawget(_G, "color")
-    if type(c) == "function" then return c(hex) end
-    return fallback
-  end
-  local self_color  = maybeColor("#a1ff94", { 0.631, 1.0, 0.580, 1 })
-  local rival_color = maybeColor("#c29cff", { 0.761, 0.612, 1.0, 1 })
+local function createACResultImageDialogActor(name, player)
+  -- Resizes the border/background quads to hug the actual on-screen image size (no extra
+  -- padding), and repositions the counter/arrows relative to that size.
+  local function layoutBoxToImage(box, w, h)
+    local bw = 2
 
-  -- Score type colors (matching theme's color scheme)
-  -- Try to use theme's existing judgment colors when available
-  local itg_color   = (SL and SL.JudgmentColors and SL.JudgmentColors["ITG"] and SL.JudgmentColors["ITG"][1]) or
-      maybeColor("#21CCE8", { 0.129, 0.8, 0.91, 1 })
-  local ex_color    = itg_color                                     -- EX scores use the same blue as ITG
-  local hex_color   = maybeColor("#ff00cc", { 1.0, 0.2, 0.406, 1 }) -- Pink for H.EX scores
+    local bg = box:GetChild("Background")
+    if bg then bg:zoomto(w, h) end
 
-  -- Determine score color based on score text content
-  local function getScoreTypeColor(scoreText)
-    if not scoreText or scoreText == "" then
-      return { 1, 1, 1, 1 } -- default white
-    end
+    local top = box:GetChild("BorderTop")
+    if top then top:xy(0, -(h / 2)):zoomto(w, bw) end
 
-    local scoreStr = tostring(scoreText):upper()
-    if scoreStr:find("H%.EX") or scoreStr:find("H.EX") or scoreStr:find("HARDEX") then
-      return hex_color
-    elseif scoreStr:find("EX") then
-      return ex_color
-    elseif scoreStr:find("ITG") then
-      return itg_color
-    else
-      return { 1, 1, 1, 1 } -- default white
-    end
-  end
+    local bottom = box:GetChild("BorderBottom")
+    if bottom then bottom:xy(0, (h / 2)):zoomto(w, bw) end
 
-  -- Apply content from API response to dialog elements
-  local function applyContent()
-    if not af or not dialogData then
-      return
-    end
+    local left = box:GetChild("BorderLeft")
+    if left then left:xy(-(w / 2), 0):zoomto(bw, math.max(h - 2 * bw, 0)) end
 
-    -- Extract leaderboards from response
-    local allLeaderboards = {}
-    if dialogData.eventLeaderboards and #dialogData.eventLeaderboards > 0 then
-      local firstEvent = dialogData.eventLeaderboards[1]
-      if firstEvent.leaderboards and #firstEvent.leaderboards > 0 then
-        allLeaderboards = firstEvent.leaderboards
-      end
-    end
+    local right = box:GetChild("BorderRight")
+    if right then right:xy((w / 2), 0):zoomto(bw, math.max(h - 2 * bw, 0)) end
 
-    -- If no leaderboards, don't show anything
-    if #allLeaderboards == 0 then
-      return
-    end
+    local counter = box:GetChild("Counter")
+    if counter then counter:xy(0, (h / 2) + 16) end
 
-    -- Get the current leaderboard to display
-    local currentLeaderboard = allLeaderboards[currentLeaderboardIndex] or allLeaderboards[1]
+    local leftArrow = box:GetChild("LeftArrow")
+    if leftArrow then leftArrow:xy(-(w / 2) - 22, 0) end
 
-    if not currentLeaderboard then
-      return
-    end
-
-    local box = af:GetChild("Box")
-    if not box then
-      debugPrint("No box found - available children:")
-      if af then
-        for i = 0, af:GetNumChildren() - 1 do
-          local child = af:GetChildAt(i)
-          if child and child.GetName then
-            debugPrint("  Child " .. i .. ": " .. tostring(child:GetName()))
-          end
-        end
-      end
-      return
-    end
-
-    -- Update freeform text from event messages
-    local freeformText = box:GetChild("Freeform")
-    if freeformText then
-      local messages = {}
-      -- Get messages from the first event
-      if dialogData.eventLeaderboards and #dialogData.eventLeaderboards > 0 then
-        local firstEvent = dialogData.eventLeaderboards[1]
-        if firstEvent.messages and type(firstEvent.messages) == "table" then
-          messages = firstEvent.messages
-        end
-      end
-
-      -- Render up to first 2 messages
-      local displayText = ""
-      for i = 1, math.min(2, #messages) do
-        if i > 1 then
-          displayText = displayText .. "\n"
-        end
-        displayText = displayText .. tostring(messages[i])
-      end
-
-      -- If no messages, show default text
-      if displayText == "" then
-        displayText = "New Personal Best"
-      end
-
-      freeformText:settext(displayText)
-      freeformText:diffuse(1, 1, 1, 1)
-    end
-
-    -- Update mode label
-    local modeLabel = box:GetChild("ModeLabel")
-    if modeLabel then
-      local labelText = currentLeaderboard.type or ""
-      modeLabel:settext(labelText)
-      modeLabel:diffuse(1, 1, 1, 1)
-      modeLabel:diffusealpha(0.8)
-    end
-
-    -- Update leaderboard data
-    local board = box:GetChild("Board")
-    if board then
-      -- Prepare row data from API entries
-      local apiEntries = currentLeaderboard.entries or {}
-      local rowData = {}
-
-      -- Take up to 8 entries for display
-      for i = 1, math.min(8, #apiEntries) do
-        local entry = apiEntries[i]
-
-        local rowEntry = {
-          rank = entry.rank,
-          name = entry.userAlias,
-          score = entry.score,
-          delta = entry.delta,
-          isSelf = entry.isSelf,  -- TODO: isSelf will come from backend later
-          isRival = entry.isRival -- TODO: isRival will come from backend later
-        }
-        table.insert(rowData, rowEntry)
-      end
-
-      -- Apply data to board rows
-      board:playcommand("SetMode", { data = rowData, leaderboardType = currentLeaderboard.type })
-    end
-
+    local rightArrow = box:GetChild("RightArrow")
+    if rightArrow then rightArrow:xy((w / 2) + 22, 0) end
   end
 
-  -- Manual navigation functions
-  local function navigateToNextLeaderboard()
-    if not dialogData or not dialogData.eventLeaderboards then
-      return
-    end
+  local function applyContent(self)
+    if not self.images or #self.images == 0 then return end
 
-    local allLeaderboards = {}
-    if dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
-      allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
-    end
+    local box = self:GetChild("Box")
+    if not box then return end
 
-    if #allLeaderboards > 1 then
-      currentLeaderboardIndex = (currentLeaderboardIndex % #allLeaderboards) + 1
-      applyContent() -- Re-apply with new leaderboard
-    end
-  end
-
-  local function navigateToPrevLeaderboard()
-    if not dialogData or not dialogData.eventLeaderboards then
-      return
-    end
-
-    local allLeaderboards = {}
-    if dialogData.eventLeaderboards[1] and dialogData.eventLeaderboards[1].leaderboards then
-      allLeaderboards = dialogData.eventLeaderboards[1].leaderboards
-    end
-
-    if #allLeaderboards > 1 then
-      currentLeaderboardIndex = currentLeaderboardIndex - 1
-      if currentLeaderboardIndex < 1 then
-        currentLeaderboardIndex = #allLeaderboards
+    local image = box:GetChild("Image")
+    local path = self.images[self.imageIndex]
+    local w, h = 0, 0
+    if image and path and FILEMAN:DoesFileExist(path) then
+      image:zoom(1)
+      -- Force an unload before reloading: the same /Downloads/ path is reused across
+      -- submissions (see downloadResultImages), and Sprite:Load(path) short-circuits to the
+      -- already-loaded texture when given a path it's already loaded, ignoring that the file's
+      -- contents changed on disk. Load(nil) drops the cached texture so the following Load(path)
+      -- actually re-reads the file.
+      image:Load(nil)
+      image:Load(path)
+      local maxW, maxH = ACImageDialogMaxSize()
+      local iw, ih = image:GetWidth(), image:GetHeight()
+      if iw and ih and iw > 0 and ih > 0 then
+        local scale = math.min(maxW / iw, maxH / ih, 1) * RESULT_IMAGE_MANUAL_SCALE
+        image:zoom(scale)
+        w, h = iw * scale, ih * scale
       end
-      applyContent() -- Re-apply with new leaderboard
     end
+
+    layoutBoxToImage(box, w, h)
+
+    local multiple = #self.images > 1
+
+    local counter = box:GetChild("Counter")
+    if counter then
+      counter:settext(multiple and (self.imageIndex .. " / " .. #self.images) or "")
+      counter:diffusealpha(multiple and 1 or 0)
+    end
+
+    local leftArrow = box:GetChild("LeftArrow")
+    local rightArrow = box:GetChild("RightArrow")
+    if leftArrow then leftArrow:diffusealpha(multiple and 1 or 0) end
+    if rightArrow then rightArrow:diffusealpha(multiple and 1 or 0) end
   end
 
   return Def.ActorFrame {
-    Name = name or "ACDialog",
+    Name = name,
     InitCommand = function(self)
-      af = self
+      self.images = {}
+      self.imageIndex = 1
       self:visible(false):draworder(200)
+      self:xy(_screen.cx, _screen.cy)
     end,
 
-    -- Reset dialog state when the ActorFrame is created/reset
+    -- external API: mode is "center", "left", or "right". Instant, not tweened -- a dialog
+    -- should always appear directly in its correct slot rather than visibly sliding into
+    -- place. Only used for the rare case where this dialog is already showing alone and the
+    -- other player's (slow, not dead) response arrives later, shifting this one over to make
+    -- room (see tryShowResultDialogs) -- the normal simultaneous-arrival path never moves
+    -- anything, since ShowDialogCommand computes the correct starting position itself.
+    RepositionCommand = function(self, params)
+      local mode = params and params.mode or "center"
+      local x = _screen.cx
+      if mode == "left" then
+        x = _screen.cx - RESULT_DIALOG_SIDE_OFFSET
+      elseif mode == "right" then
+        x = _screen.cx + RESULT_DIALOG_SIDE_OFFSET
+      end
+      self:xy(x, _screen.cy)
+    end,
+
     ResetDialogStateCommand = function(self)
-      dialogData = nil
-      currentLeaderboardIndex = 1
-      self:visible(false)
-      -- Ensure normal evaluation input is restored
-      local overlay = SCREENMAN:GetTopScreen() and SCREENMAN:GetTopScreen():GetChild("Overlay")
-      if overlay then
-        local evalCommon = overlay:GetChild("ScreenEval Common")
-        if evalCommon then
-          evalCommon:queuecommand("DirectInputToEngine")
-        end
-      end
+      self.images = {}
+      self.imageIndex = 1
+      self:finishtweening():visible(false):diffusealpha(1)
     end,
 
-    -- external API: Show the dialog with API response data
+    -- external API: show the dialog with a set of already-downloaded local image paths.
+    -- params.mode ("center"/"left"/"right") sets the starting position -- set directly here
+    -- (not via the tweened Reposition command) because it must happen in the same command as
+    -- the alpha fade-in below: Reposition's own stoptweening() would otherwise race with (and
+    -- often lose to) this command's stoptweening(), since calling stoptweening() twice on the
+    -- same actor in the same instant cancels whichever tween was queued first.
     ShowDialogCommand = function(self, params)
-      -- Reset state before showing new dialog
-      currentLeaderboardIndex = 1
-      
-      -- Store response data for content application
-      if params and params.responseData then
-        dialogData = params.responseData
-      else
-        dialogData = nil
-        return -- Don't show dialog without data
-      end      -- apply content immediately since children should exist
-      self:playcommand("ApplyDialogContent")
-
-      -- Switch to event overlay input handling like ITL/SRPG
-      local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
-      if overlay then
-        overlay:queuecommand("DirectInputToEventOverlayHandler")
+      if not params or not params.images or #params.images == 0 then
+        return
       end
+
+      self.images = params.images
+      self.imageIndex = 1
+      applyContent(self)
+
+      local mode = params.mode or "center"
+      local x = _screen.cx
+      if mode == "left" then
+        x = _screen.cx - RESULT_DIALOG_SIDE_OFFSET
+      elseif mode == "right" then
+        x = _screen.cx + RESULT_DIALOG_SIDE_OFFSET
+      end
+      self:xy(x, _screen.cy)
 
       self:visible(true)
       self:stoptweening():diffusealpha(0):linear(0.15):diffusealpha(1)
       self:GetChild("Snd"):play()
     end,
 
-    ApplyDialogContentCommand = function(self)
-      applyContent()
+    NextImageCommand = function(self)
+      if not self.images or #self.images <= 1 then return end
+      self.imageIndex = (self.imageIndex % #self.images) + 1
+      applyContent(self)
     end,
 
-    -- Handle input events via message broadcasting (like ITL/SRPG panels)
-    EventOverlayInputEventMessageCommand = function(self, event)
-      debugPrint("ArrowCloud EventOverlay Input - Event received: " .. tostring(event and event.GameButton or "nil"))
-      debugPrint("ArrowCloud Dialog visible: " .. tostring(af and af:GetVisible() or "nil"))
-      
-      if not af or not af:GetVisible() then return end
-      if not event or not event.PlayerNumber or not event.button then return end
-      if event.type == "InputEventType_FirstPress" then
-        debugPrint("ArrowCloud EventOverlay Input: " .. tostring(event.GameButton))
-        
-        if event.GameButton == "Back" or event.GameButton == "Start" or event.GameButton == "Select" then
-          debugPrint("ArrowCloud: Dismissing dialog via EventOverlay")
-          af:queuecommand("Hide")
-        elseif event.GameButton == "MenuRight" then
-          debugPrint("ArrowCloud: Navigate to next leaderboard via EventOverlay")
-          navigateToNextLeaderboard()
-        elseif event.GameButton == "MenuLeft" then
-          debugPrint("ArrowCloud: Navigate to previous leaderboard via EventOverlay")
-          navigateToPrevLeaderboard()
-        end
-      end
+    PrevImageCommand = function(self)
+      if not self.images or #self.images <= 1 then return end
+      self.imageIndex = self.imageIndex - 1
+      if self.imageIndex < 1 then self.imageIndex = #self.images end
+      applyContent(self)
     end,
 
-    -- Manual navigation commands
-    NextLeaderboardCommand = function(self)
-      navigateToNextLeaderboard()
-    end,
-
-    PrevLeaderboardCommand = function(self)
-      navigateToPrevLeaderboard()
-    end,    HideCommand = function(self)
-      -- Restore normal evaluation input handling
-      local overlay = SCREENMAN:GetTopScreen():GetChild("Overlay"):GetChild("ScreenEval Common")
-      if overlay then
-        overlay:queuecommand("DirectInputToEngine")
-      end
-      
+    HideCommand = function(self)
       self:stoptweening():linear(0.15):diffusealpha(0)
       self:sleep(0.16):queuecommand("AfterHide")
     end,
 
     AfterHideCommand = function(self)
       self:visible(false)
-      -- Clear dialog data when fully hidden to prevent persistence
-      dialogData = nil
-      currentLeaderboardIndex = 1
+      self.images = {}
+      self.imageIndex = 1
     end,
 
     -- sfx (re-use prompt sound)
@@ -1735,357 +1600,165 @@ local function createACDialogActor(name)
       InitCommand = function(self) end,
     },
 
-    -- darkened fullscreen underlay (slightly less opaque)
-    Def.Quad {
-      InitCommand = function(self) self:FullScreen():diffuse(0, 0, 0, 0.75) end
-    },
-
-    -- content box
+    -- content box; Background/Border sizes are set dynamically (see layoutBoxToImage) to hug
+    -- whatever image is currently displayed rather than a fixed oversized panel. Note: there is
+    -- deliberately no per-dialog full-screen dim quad here -- a single shared one is owned by
+    -- the ScreenEvaluationStage/Nonstop registration (see tryShowResultDialogs) so two
+    -- simultaneously-visible dialogs (P1+P2) never stack two dim quads and double-darken the
+    -- screen.
     Def.ActorFrame {
       Name = "Box",
-      InitCommand = function(self) self:xy(_screen.cx, _screen.cy) end,
 
-      -- panel background (slightly less opaque black)
       Def.Quad {
-        InitCommand = function(self)
-          local w, h = ACDialogSize()
-          self:zoomto(w, h)
-          self:diffuse(0, 0, 0, 0.9)
-        end
+        Name = "Background",
+        InitCommand = function(self) self:zoomto(0, 0):diffuse(0, 0, 0, 0.9) end
       },
 
-      -- border around panel (static quads like ITL/SRPG)
+      -- the result image itself; Texture is swapped at runtime via Image:Load(path). Drawn
+      -- before the border quads below so the border remains visible as an outline on top of
+      -- the image's edge, rather than being covered by it.
+      Def.Sprite {
+        Name = "Image",
+        InitCommand = function(self) self:xy(0, 0) end
+      },
+
       Def.Quad {
         Name = "BorderTop",
-        InitCommand = function(self)
-          local w, h = ACDialogSize()
-          local bw = 2
-          self:xy(0, -(h / 2))
-          self:halign(0.5):valign(0)
-          self:zoomto(w, bw)
-          self:diffuse(1, 1, 1, 0.35)
-        end
+        InitCommand = function(self) self:halign(0.5):valign(0):zoomto(0, 2):diffuse(1, 1, 1, 1) end
       },
       Def.Quad {
         Name = "BorderBottom",
-        InitCommand = function(self)
-          local w, h = ACDialogSize()
-          local bw = 2
-          self:xy(0, (h / 2))
-          self:halign(0.5):valign(1)
-          self:zoomto(w, bw)
-          self:diffuse(1, 1, 1, 0.35)
-        end
+        InitCommand = function(self) self:halign(0.5):valign(1):zoomto(0, 2):diffuse(1, 1, 1, 1) end
       },
       Def.Quad {
         Name = "BorderLeft",
-        InitCommand = function(self)
-          local w, h = ACDialogSize()
-          local bw = 2
-          self:xy(-(w / 2), 0)
-          self:halign(0):valign(0.5)
-          self:zoomto(bw, h - 2 * bw)
-          self:diffuse(1, 1, 1, 0.35)
-        end
+        InitCommand = function(self) self:halign(0):valign(0.5):zoomto(2, 0):diffuse(1, 1, 1, 1) end
       },
       Def.Quad {
         Name = "BorderRight",
+        InitCommand = function(self) self:halign(1):valign(0.5):zoomto(2, 0):diffuse(1, 1, 1, 1) end
+      },
+
+      -- "n / total" page counter, only shown when there's more than one image
+      LoadFont("Common" .. " Normal") .. {
+        Name = "Counter",
         InitCommand = function(self)
-          local w, h = ACDialogSize()
-          local bw = 2
-          self:xy((w / 2), 0)
-          self:halign(1):valign(0.5)
-          self:zoomto(bw, h - 2 * bw)
-          self:diffuse(1, 1, 1, 0.35)
+          self:halign(0.5)
+          self:zoom(0.6)
+          self:diffuse(1, 1, 1, 1)
+          self:diffusealpha(0)
+          self:settext("")
         end
       },
 
-      -- header text (BLUE SHIFT) centered along the top
-      LoadFont("Common" .. " Header") .. {
-        Name = "LogoText",
+      -- Left/right paging controls, only shown when there's more than one image. Matches the
+      -- ITL/SRPG EventOverlay and ACLeaderboard's "PaneIcons" convention: the &MENULEFT;/
+      -- &MENURiGHT; markers (not literal glyphs) resolve to real triangle-icon codepoints via
+      -- the engine's font-alias system, and are available in any font since every font imports
+      -- "Common default" -- a literal arrow character isn't mapped in any font here and falls
+      -- back to the theme's "missing glyph" box.
+      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+        Name = "LeftArrow",
+        Text = "&MENULEFT;",
         InitCommand = function(self)
-          local w, h = ACDialogSize()
-          self:xy(0, -(h / 2) + DIALOG_LAYOUT.TITLE_Y_OFFSET)
           self:halign(0.5)
           self:zoom(0.8)
-          -- rgb(1,89,227)
-          self:diffuse(1 / 255, 89 / 255, 227 / 255, 1)
-          self:settext("BLUE SHIFT")
-        end
-      },
-
-      -- centered freeform text under the header logo
-      LoadFont("Common" .. " Normal") .. {
-        Name = "Freeform",
-        InitCommand = function(self)
-          local w, h = ACDialogSize()
-          self:xy(0, -(h / 2) + DIALOG_LAYOUT.FREEFORM_Y_OFFSET)
-          self:halign(0.5)
-          self:valign(0)
-          self:zoom(1)
           self:diffuse(1, 1, 1, 1)
-          self:settext("New Personal Best")
-        end
-      },
-
-      -- leaderboard mode label (from API response)
-      LoadFont("Common" .. " Normal") .. {
-        Name = "ModeLabel",
-        InitCommand = function(self)
-          local w, h = ACDialogSize()
-          self:xy(0, -(h / 2) + DIALOG_LAYOUT.MODE_LABEL_Y_OFFSET)
-          self:halign(0.5)
-          self:zoom(0.7)
           self:diffusealpha(0)
-          self:settext("") -- will be set by applyContent()
-        end
-      },                   -- Hardcoded leaderboard table (rank, alias, score, point delta)
-      Def.ActorFrame {
-        Name = "Board",
+        end,
+        OnCommand = function(self) self:queuecommand("Bounce") end,
+        BounceCommand = function(self)
+          self:decelerate(0.5):addx(-6):accelerate(0.5):addx(6)
+          self:queuecommand("Bounce")
+        end,
+      },
+      LoadFont(ThemePrefs.Get("ThemeFont") .. " Normal") .. {
+        Name = "RightArrow",
+        Text = "&MENURiGHT;",
         InitCommand = function(self)
-          local w, h = ACDialogSize()
-          self:xy(-(w / 2) + 20, -(h / 2) + DIALOG_LAYOUT.BOARD_Y_OFFSET)
-          -- compute and stash column anchors for children to use
-          self.innerW     = w - DIALOG_LAYOUT.DIALOG_PADDING
-          self.rankRight  = DIALOG_LAYOUT.RANK_COLUMN_X                     -- right-aligned rank near left
-          self.nameLeft   = DIALOG_LAYOUT.ALIAS_COLUMN_X                    -- name starts a bit after rank
-          self.scoreRight = self.innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET -- score aligns near the right
-          self.deltaRight = self.innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET -- delta flush-right, fills width
+          self:halign(0.5)
+          self:zoom(0.8)
+          self:diffuse(1, 1, 1, 1)
+          self:diffusealpha(0)
         end,
-        SetModeCommand = function(self, params)
-          local rows = params and params.data or {}
-          local leaderboardType = params and params.leaderboardType or ""
-
-          local function applyRow(rowName, data)
-            local row = self:GetChild(rowName)
-            if not row then
-              return
-            end
-            local rankNode  = row:GetChild("Rank")
-            local aliasNode = row:GetChild("Alias")
-            local scoreNode = row:GetChild("Score")
-            local deltaNode = row:GetChild("Delta")
-
-            -- set texts
-            local rankText  = data.rank and (tostring(data.rank) .. ".") or ""
-            local aliasText = data.name or ""
-            local scoreText = data.score or ""
-
-            -- Add emojis for self/rival
-            if data.isSelf then
-              aliasText = aliasText .. " 🙂"
-            elseif data.isRival then
-              aliasText = aliasText .. " ⚔"
-            end
-
-            rankNode:settext(rankText)
-            aliasNode:settext(aliasText)
-            scoreNode:settext(scoreText)
-
-            -- row highlight for self/rival (but preserve score type and delta colors)
-            local rowColor = nil
-            if data.isSelf then
-              rowColor = self_color
-            elseif data.isRival then
-              rowColor = rival_color
-            end
-
-            -- Apply row highlighting to rank and alias columns
-            if rowColor then
-              rankNode:diffuse(rowColor)
-              aliasNode:diffuse(rowColor)
-            else
-              rankNode:diffuse(1, 1, 1, 1)
-              aliasNode:diffuse(1, 1, 1, 1)
-            end
-
-            -- Score column: self/rival color takes priority, otherwise use score type color
-            if rowColor then
-              scoreNode:diffuse(rowColor)
-            else
-              local scoreTypeColor = getScoreTypeColor(leaderboardType)
-              scoreNode:diffuse(scoreTypeColor)
-            end
-
-            -- Format delta column using helper function
-            local deltaText, deltaColor = formatDelta(data.delta)
-
-            deltaNode:diffuse(deltaColor)
-            deltaNode:settext(deltaText)
-          end
-
-          -- Apply data to each row (up to 8 entries)
-          applyRow("Row2", rows[1] or {})
-          applyRow("Row3", rows[2] or {})
-          applyRow("Row4", rows[3] or {})
-          applyRow("Row5", rows[4] or {})
-          applyRow("Row6", rows[5] or {})
-          applyRow("Row7", rows[6] or {})
-          applyRow("Row8", rows[7] or {})
-          applyRow("Row9", rows[8] or {})
+        OnCommand = function(self) self:queuecommand("Bounce") end,
+        BounceCommand = function(self)
+          self:decelerate(0.5):addx(6):accelerate(0.5):addx(-6)
+          self:queuecommand("Bounce")
         end,
-
-        -- Row helper: four columns (rank, name, score, delta)
-        Def.ActorFrame { Name = "Row2",
-          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 0) end,
-          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            local w = ACDialogSize()
-            local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-              "")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize()
-            local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize()
-            local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
-              1, 1):settext("")
-          end },
-        },
-        Def.ActorFrame { Name = "Row3",
-          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 1) end,
-          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-              "")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
-              1, 1):settext("")
-          end },
-        },
-        Def.ActorFrame { Name = "Row4",
-          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 2) end,
-          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-              "")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
-              1, 1):settext("")
-          end },
-        },
-        Def.ActorFrame { Name = "Row5",
-          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 3) end,
-          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-              "")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
-              1, 1):settext("")
-          end },
-        },
-        Def.ActorFrame { Name = "Row6",
-          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 4) end,
-          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-              "")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
-              1, 1):settext("")
-          end },
-        },
-        Def.ActorFrame { Name = "Row7",
-          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 5) end,
-          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-              "")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
-              1, 1):settext("")
-          end },
-        },
-        Def.ActorFrame { Name = "Row8",
-          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 6) end,
-          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-              "")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
-              1, 1):settext("")
-          end },
-        },
-        Def.ActorFrame { Name = "Row9",
-          InitCommand = function(self) self:y(DIALOG_LAYOUT.ROW_SPACING * 7) end,
-          LoadFont("Common" .. " Normal") .. { Name = "Rank", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.RANK_COLUMN_X, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Alias", InitCommand = function(self)
-            self:xy(DIALOG_LAYOUT.ALIAS_COLUMN_X, 0):halign(0):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1, 1, 1):settext(
-              "")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Score", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.SCORE_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):settext("")
-          end },
-          LoadFont("Common" .. " Normal") .. { Name = "Delta", InitCommand = function(self)
-            local w = ACDialogSize(); local innerW = w - DIALOG_LAYOUT.DIALOG_PADDING
-            self:xy(innerW - DIALOG_LAYOUT.DELTA_COLUMN_OFFSET, 0):halign(1):zoom(DIALOG_LAYOUT.FONT_ZOOM):diffuse(1, 1,
-              1, 1):settext("")
-          end },
-        },
-      }
-    },
-
+      },
+    }
   }
+end
+
+-- Shows each player's result-image dialog the first time they have images ready, in its final
+-- position, once we've heard back (see self.pendingResultResponses) from everyone who's
+-- actually submitting this round -- so a dialog normally appears already in its correct spot
+-- and never has to move afterward (the one exception: see the Reposition branches below).
+-- Tracks "already handled" per player (self.resultDialogShown, permanent for the visit) rather
+-- than a single one-shot flag or self.resultDialogVisible (which the dismiss handler resets),
+-- so this can be called again later without re-showing a dialog the player already closed.
+-- `force` bypasses the "wait for everyone" check as a safety net in case some response never
+-- comes back.
+local function tryShowResultDialogs(self, force)
+  if not force and next(self.pendingResultResponses) ~= nil then return end
+
+  local p1Paths = self.pendingResultImages.P1
+  local p2Paths = self.pendingResultImages.P2
+  local p1Has = p1Paths and #p1Paths > 0
+  local p2Has = p2Paths and #p2Paths > 0
+  -- "Handled" (self.resultDialogShown) means "already shown at least once this visit" and is
+  -- permanent -- unlike self.resultDialogVisible (which the dismiss handler resets to false
+  -- the moment the player closes it), it must NOT flip back once set, or a later call here
+  -- (e.g. the force-timeout, or the other player's response arriving) would see "has images,
+  -- not shown" and pop the just-dismissed dialog back up.
+  local p1Handled = self.resultDialogShown.P1
+  local p2Handled = self.resultDialogShown.P2
+
+  -- Nothing new to do: nobody has images, or whoever does has already been handled.
+  -- Per-player (not a single one-shot flag) so a force-timeout rescuing one player's dialog
+  -- can't permanently block the other's later, genuinely-successful response from showing.
+  if (not p1Has or p1Handled) and (not p2Has or p2Handled) then return end
+
+  -- Once this call resolves, will both players simultaneously have a dialog on screen? A
+  -- player only counts if they're about to be freshly shown, or are still currently visible
+  -- (not one who was shown and already dismissed).
+  local p1WillBeUp = (p1Has and not p1Handled) or self.resultDialogVisible.P1
+  local p2WillBeUp = (p2Has and not p2Handled) or self.resultDialogVisible.P2
+  local bothWillBeVisible = p1WillBeUp and p2WillBeUp
+
+  if p1Has and not p1Handled then
+    local dialog = self:GetChild("P1ACDialog")
+    if dialog then
+      self.resultDialogShown.P1 = true
+      self.resultDialogVisible.P1 = true
+      dialog:playcommand("ShowDialog", { images = p1Paths, mode = bothWillBeVisible and "left" or "center" })
+    end
+  elseif self.resultDialogVisible.P1 and bothWillBeVisible then
+    -- P1 was already showing alone (centered) and P2's dialog is about to join it -- shift P1
+    -- over to make room. Only reachable via the force-timeout rescuing one player while the
+    -- other's response is merely slow, not dead -- rare enough that a position change here
+    -- (unlike the normal simultaneous-arrival path) is an acceptable tradeoff for not silently
+    -- dropping the second player's dialog.
+    local dialog = self:GetChild("P1ACDialog")
+    if dialog then dialog:playcommand("Reposition", { mode = "left" }) end
+  end
+
+  if p2Has and not p2Handled then
+    local dialog = self:GetChild("P2ACDialog")
+    if dialog then
+      self.resultDialogShown.P2 = true
+      self.resultDialogVisible.P2 = true
+      dialog:playcommand("ShowDialog", { images = p2Paths, mode = bothWillBeVisible and "right" or "center" })
+    end
+  elseif self.resultDialogVisible.P2 and bothWillBeVisible then
+    local dialog = self:GetChild("P2ACDialog")
+    if dialog then dialog:playcommand("Reposition", { mode = "right" }) end
+  end
+
+  self:playcommand("DirectInputToACResultDialog")
+  local dim = self:GetChild("ResultDialogDim")
+  if dim then dim:visible(true) end
 end
 
 -- Module registration and event handlers
@@ -2094,16 +1767,75 @@ local moduleRegistration = {}
 moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   InitCommand = function(self)
     self.waiting = { P1 = false, P2 = false }
-    self.dialogShown = false
+    self.resultDialogVisible = { P1 = false, P2 = false }
+    self.resultDialogShown = { P1 = false, P2 = false }
+    self.pendingResultResponses = {}
+    self.pendingResultImages = {}
+    self.resultDialogInputHandler = nil
+    self.armed = false
   end,
+
+  -- The real "we've left this screen" signal: this module's ActorFrame lives
+  -- permanently in ScreenSystemLayer (see Modules/README.md / ScreenSystemLayer
+  -- overlay.lua's LoadModules()) and there is no reliable "Off" broadcast wired up
+  -- for it -- ModuleCommand only fires while this screen is current, but nothing
+  -- ever un-arms it once it has fired once. Without this, after this module has
+  -- been armed at least once, it stays armed forever and starts reacting to the
+  -- *other* module's (Stage/Nonstop) submission broadcasts again -- ScreenChanged
+  -- is broadcast globally on every screen transition, so listen for it directly
+  -- rather than relying on OffCommand.
+  ScreenChangedMessageCommand = function(self)
+    if not self.armed then return end
+    local screen = SCREENMAN:GetTopScreen()
+    if not screen or screen:GetName() ~= "ScreenEvaluationStage" then
+      self.armed = false
+      -- Release any input redirection left over if we're leaving mid-dialog
+      -- (e.g. a restart bypassing the normal dismiss path).
+      self:playcommand("DirectInputToEngineFromResultDialog")
+    end
+  end,
+
   ModuleCommand = function(self)
-    -- reset dialog visibility guard on each screen entry
-    self.dialogShown = false
+    -- Cancel any sleep()/queuecommand() chain still pending from a previous visit (e.g.
+    -- ForceShowResultDialogs, RetryPending queued below) before queuing this visit's own --
+    -- otherwise a stale one could fire later against this visit's freshly-reset state.
+    self:stoptweening()
+
+    -- Mark this module as the one actually driving this Evaluation-screen visit.
+    -- ScreenEvaluationStage and ScreenEvaluationNonstop's actors both live
+    -- permanently in ScreenSystemLayer (only one of them gets ModuleCommand fired
+    -- per visit, depending on which screen is current), but MESSAGEMAN:Broadcast
+    -- is global -- both modules' ArrowCloudSubmitResultMessageCommand handlers
+    -- would otherwise react to the *other* module's submission broadcast, each
+    -- downloading/showing their own dialog for the same player.
+    self.armed = true
+    -- reset dialog visibility guards on each screen entry
+    self.resultDialogVisible = { P1 = false, P2 = false }
+    self.resultDialogShown = { P1 = false, P2 = false }
+    self.pendingResultResponses = {}
+    self.pendingResultImages = {}
+
+    -- Defensively release input redirection left over from a previous visit. Restarting the
+    -- song (e.g. Ctrl+R) while the result dialog was open skips both the dismiss handler and
+    -- OffCommand -- the only two places that normally call DirectInputToEngineFromResultDialog
+    -- -- leaving set_input_redirected(true) stuck forever and soft-locking every later
+    -- Evaluation screen's input (nothing, including Back, gets through). Since that flag isn't
+    -- reliably reset on the way out in every case, reset it defensively on the way in instead.
+    if self.resultDialogInputHandler then
+      local top = SCREENMAN:GetTopScreen()
+      if top then top:RemoveInputCallback(self.resultDialogInputHandler) end
+      self.resultDialogInputHandler = nil
+    end
+    for player in ivalues(PlayerNumber) do
+      SCREENMAN:set_input_redirected(player, false)
+    end
 
     -- Reset dialog state to prevent persistence from previous visits
-    local dialog = self:GetChild("ACDialog")
-    if dialog then
-      dialog:playcommand("ResetDialogState")
+    for _, pn in ipairs({ "P1", "P2" }) do
+      local dialog = self:GetChild(pn .. "ACDialog")
+      if dialog then
+        dialog:playcommand("ResetDialogState")
+      end
     end
 
     -- Clear previous texts
@@ -2127,11 +1859,18 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     end
 
     local players = GAMESTATE:GetHumanPlayers()
+
+    -- Determine eligibility for everyone first, and register anyone we're about to submit for
+    -- as "pending a response" (self.pendingResultResponses) BEFORE firing any requests. Arrow
+    -- Cloud responses can come back near-instantly -- if players were registered one at a time
+    -- in the same loop that fires sendScoreData, a fast response for the first player could
+    -- arrive and be processed (see tryShowResultDialogs) before the loop even reached the
+    -- second player, prematurely treating "everyone's responded" as just the first player.
+    local toSubmit = {}
     for _, player in ipairs(players) do
       local pn = ToEnumShortString(player)
-      local label = (pn == "P1") and p1Text or p2Text
       local pendingLabel = (pn == "P1") and p1Pending or p2Pending
-      
+
       -- Show initial pending count for this player
       if ENABLE_PENDING_SCORES then
         local pendingCount = countPendingScores(player)
@@ -2140,18 +1879,16 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
           pendingLabel:diffusecolor(pendingLabelColor(pendingCount))
         end
       end
-      
+
       local profileCfg = readApiKey(player)
       local eligibility = ArrowCloud.isEligible(player, { allowAutoplay = profileCfg.allowAutoplay })
       local apiKey = profileCfg.apiKey
 
       if apiKey ~= nil and apiKey ~= "" and eligibility.ok then
-        if label then label:settext("Arrow Cloud: submitting…") end
-        self.waiting[pn] = true
-        local data = buildSongResultData(player, style)
-        local hash = tostring(SL[pn].Streams.Hash)
-        sendScoreData(data, apiKey, hash, player)
+        self.pendingResultResponses[pn] = true
+        toSubmit[#toSubmit + 1] = { player = player, pn = pn, apiKey = apiKey }
       else
+        local label = (pn == "P1") and p1Text or p2Text
         if apiKey ~= nil and not eligibility.ok then
           if label then label:settext("❌ Arrow Cloud") end
           debugPrint("Skipping submission (ineligible)")
@@ -2163,8 +1900,27 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       end
     end
 
+    for _, sub in ipairs(toSubmit) do
+      local pn = sub.pn
+      local player = sub.player
+      local label = (pn == "P1") and p1Text or p2Text
+      if label then label:settext("Arrow Cloud: submitting…") end
+      self.waiting[pn] = true
+      local data = buildSongResultData(player, style)
+      local hash = tostring(SL[pn].Streams.Hash)
+      sendScoreData(data, sub.apiKey, hash, player)
+    end
+
     -- After normal submissions, retry pending scores
     self:sleep(1):queuecommand("RetryPending")
+    -- Safety net: if some response never comes back (dropped connection, etc.),
+    -- don't leave a player who DID get a response stuck waiting forever.
+    self:sleep(15):queuecommand("ForceShowResultDialogs")
+  end,
+
+  ForceShowResultDialogsCommand = function(self)
+    if not self.armed then return end
+    tryShowResultDialogs(self, true)
   end,
 
   RetryPendingCommand = function(self)
@@ -2204,9 +1960,8 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   end,
 
   ArrowCloudSubmitResultMessageCommand = function(self, params)
-    if not params or not params.player then
-      return
-    end
+    if not params or not params.player then return end
+    if not self.armed then return end
     local pn = params.player
 
     local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
@@ -2241,20 +1996,26 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
 
       self.waiting[pn] = false
     end
-    -- Show dialog only if we have valid response data with eventLeaderboards
-    -- Skip dialog in versus mode (two players) since each gets separate responses
-    local players = GAMESTATE:GetHumanPlayers()
-    if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards and #players == 1 then
-      self.dialogShown = true
-      local dialog = self:GetChild("ACDialog")
-      if dialog then
-        dialog:playcommand("ShowDialog", { responseData = params.responseData })
-      end
+    -- Download this player's result images (if any), but don't show anything yet --
+    -- wait until every submitting player's response has come in (see tryShowResultDialogs)
+    -- so the final single-vs-both layout is known before anything is shown, and no dialog
+    -- ever has to visibly move after first appearing.
+    if params.responseData and params.responseData.resultImages and #params.responseData.resultImages > 0 then
+      local player = (pn == "P1") and PLAYER_1 or PLAYER_2
+      downloadResultImages(params.responseData.resultImages, player, function(paths)
+        self.pendingResultImages[pn] = paths
+        self.pendingResultResponses[pn] = nil
+        tryShowResultDialogs(self)
+      end)
+    else
+      self.pendingResultResponses[pn] = nil
+      tryShowResultDialogs(self)
     end
   end,
 
   -- Handle pending scores at capacity
   ArrowCloudPendingFullMessageCommand = function(self, params)
+    if not self.armed then return end
     if not params or not params.player then return end
     local pn = params.player
     local pendingLabel = self:GetChild(pn == "P1" and "ACPendingP1" or "ACPendingP2")
@@ -2264,12 +2025,95 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     end
   end,
 
+  -- Route Back/Start/Select/MenuLeft/MenuRight to whichever player's result-image
+  -- dialog is currently visible. There is no per-player input-redirection primitive
+  -- in this engine, so redirection covers both players (same as EventOverlay/
+  -- ACLoginModal elsewhere in this file) while either dialog is open; each event is
+  -- still scoped to the correct dialog instance via event.PlayerNumber.
+  DirectInputToACResultDialogCommand = function(self)
+    local top = SCREENMAN:GetTopScreen()
+    if not top then return end
+
+    -- Suppress the Evaluation screen's own pane-cycling InputHandler while we're up --
+    -- set_input_redirected alone doesn't stop it (it only gates native input, not Lua
+    -- callbacks), so without this MenuLeft/MenuRight would also cycle the panes behind us.
+    local overlay = top:GetChild("Overlay")
+    local evalCommon = overlay and overlay:GetChild("ScreenEval Common")
+    if evalCommon then
+      evalCommon:queuecommand("DirectInputToACResultDialog")
+    end
+
+    if self.resultDialogInputHandler then return end
+
+    self.resultDialogInputHandler = function(event)
+      if not event or not event.PlayerNumber then return false end
+      if event.type ~= "InputEventType_FirstPress" then return false end
+      if not self.resultDialogVisible.P1 and not self.resultDialogVisible.P2 then return false end
+
+      local gbtn = event.GameButton
+
+      -- Either player closes both dialogs at once, regardless of whose is visible.
+      if gbtn == "Back" or gbtn == "Start" or gbtn == "Select" then
+        for _, pn in ipairs({ "P1", "P2" }) do
+          if self.resultDialogVisible[pn] then
+            local dlg = self:GetChild(pn .. "ACDialog")
+            if dlg then dlg:queuecommand("Hide") end
+            self.resultDialogVisible[pn] = false
+          end
+        end
+        local dim = self:GetChild("ResultDialogDim")
+        if dim then dim:visible(false) end
+        self:playcommand("DirectInputToEngineFromResultDialog")
+        return true
+      end
+
+      -- Paging stays scoped to the pressing player's own dialog.
+      local eventPn = ToEnumShortString(event.PlayerNumber)
+      if not self.resultDialogVisible[eventPn] then return false end
+
+      local dialog = self:GetChild(eventPn .. "ACDialog")
+      if not dialog then return false end
+
+      if gbtn == "MenuRight" then
+        dialog:queuecommand("NextImage")
+        return true
+      elseif gbtn == "MenuLeft" then
+        dialog:queuecommand("PrevImage")
+        return true
+      end
+
+      return false
+    end
+
+    top:AddInputCallback(self.resultDialogInputHandler)
+  end,
+
+  DirectInputToEngineFromResultDialogCommand = function(self)
+    local top = SCREENMAN:GetTopScreen()
+    if top and self.resultDialogInputHandler then
+      top:RemoveInputCallback(self.resultDialogInputHandler)
+    end
+    self.resultDialogInputHandler = nil
+
+    local overlay = top and top:GetChild("Overlay")
+    local evalCommon = overlay and overlay:GetChild("ScreenEval Common")
+    if evalCommon then
+      evalCommon:queuecommand("DirectInputFromACResultDialog")
+    end
+  end,
+
   -- Clean up dialog state when leaving the screen
   OffCommand = function(self)
-    local dialog = self:GetChild("ACDialog")
-    if dialog then
-      dialog:playcommand("ResetDialogState")
+    self.armed = false
+    for _, pn in ipairs({ "P1", "P2" }) do
+      local dialog = self:GetChild(pn .. "ACDialog")
+      if dialog then
+        dialog:playcommand("ResetDialogState")
+      end
     end
+    self:playcommand("DirectInputToEngineFromResultDialog")
+    local dim = self:GetChild("ResultDialogDim")
+    if dim then dim:visible(false) end
   end,
 
   LoadFont("Common Normal") .. {
@@ -2319,23 +2163,93 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
     end
   },
 
-  -- dialog overlay used after submission
-  createACDialogActor("ACDialog")
+  -- Single shared full-screen dim quad behind both per-player dialogs (see
+  -- tryShowResultDialogs) -- avoids stacking two dim quads if both were ever
+  -- visible at once.
+  Def.Quad {
+    Name = "ResultDialogDim",
+    InitCommand = function(self)
+      self:FullScreen():diffuse(0, 0, 0, 0.75):draworder(199):visible(false)
+    end
+  },
+
+  -- per-player dialog overlays used after submission
+  createACResultImageDialogActor("P1ACDialog", PLAYER_1),
+  createACResultImageDialogActor("P2ACDialog", PLAYER_2)
 }
 
 moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
   InitCommand = function(self)
     self.waiting = { P1 = false, P2 = false }
-    self.dialogShown = false
+    self.resultDialogVisible = { P1 = false, P2 = false }
+    self.resultDialogShown = { P1 = false, P2 = false }
+    self.pendingResultResponses = {}
+    self.pendingResultImages = {}
+    self.resultDialogInputHandler = nil
+    self.armed = false
   end,
+
+  -- The real "we've left this screen" signal: this module's ActorFrame lives
+  -- permanently in ScreenSystemLayer (see Modules/README.md / ScreenSystemLayer
+  -- overlay.lua's LoadModules()) and there is no reliable "Off" broadcast wired up
+  -- for it -- ModuleCommand only fires while this screen is current, but nothing
+  -- ever un-arms it once it has fired once. Without this, after this module has
+  -- been armed at least once, it stays armed forever and starts reacting to the
+  -- *other* module's (Stage/Nonstop) submission broadcasts again -- ScreenChanged
+  -- is broadcast globally on every screen transition, so listen for it directly
+  -- rather than relying on OffCommand.
+  ScreenChangedMessageCommand = function(self)
+    if not self.armed then return end
+    local screen = SCREENMAN:GetTopScreen()
+    if not screen or screen:GetName() ~= "ScreenEvaluationNonstop" then
+      self.armed = false
+      -- Release any input redirection left over if we're leaving mid-dialog
+      -- (e.g. a restart bypassing the normal dismiss path).
+      self:playcommand("DirectInputToEngineFromResultDialog")
+    end
+  end,
+
   ModuleCommand = function(self)
-    -- reset dialog visibility guard on each screen entry
-    self.dialogShown = false
+    -- Cancel any sleep()/queuecommand() chain still pending from a previous visit (e.g.
+    -- ForceShowResultDialogs, RetryPending queued below) before queuing this visit's own --
+    -- otherwise a stale one could fire later against this visit's freshly-reset state.
+    self:stoptweening()
+
+    -- Mark this module as the one actually driving this Evaluation-screen visit.
+    -- ScreenEvaluationStage and ScreenEvaluationNonstop's actors both live
+    -- permanently in ScreenSystemLayer (only one of them gets ModuleCommand fired
+    -- per visit, depending on which screen is current), but MESSAGEMAN:Broadcast
+    -- is global -- both modules' ArrowCloudSubmitResultMessageCommand handlers
+    -- would otherwise react to the *other* module's submission broadcast, each
+    -- downloading/showing their own dialog for the same player.
+    self.armed = true
+    -- reset dialog visibility guards on each screen entry
+    self.resultDialogVisible = { P1 = false, P2 = false }
+    self.resultDialogShown = { P1 = false, P2 = false }
+    self.pendingResultResponses = {}
+    self.pendingResultImages = {}
+
+    -- Defensively release input redirection left over from a previous visit. Restarting the
+    -- song (e.g. Ctrl+R) while the result dialog was open skips both the dismiss handler and
+    -- OffCommand -- the only two places that normally call DirectInputToEngineFromResultDialog
+    -- -- leaving set_input_redirected(true) stuck forever and soft-locking every later
+    -- Evaluation screen's input (nothing, including Back, gets through). Since that flag isn't
+    -- reliably reset on the way out in every case, reset it defensively on the way in instead.
+    if self.resultDialogInputHandler then
+      local top = SCREENMAN:GetTopScreen()
+      if top then top:RemoveInputCallback(self.resultDialogInputHandler) end
+      self.resultDialogInputHandler = nil
+    end
+    for player in ivalues(PlayerNumber) do
+      SCREENMAN:set_input_redirected(player, false)
+    end
 
     -- Reset dialog state to prevent persistence from previous visits
-    local dialog = self:GetChild("ACDialog")
-    if dialog then
-      dialog:playcommand("ResetDialogState")
+    for _, pn in ipairs({ "P1", "P2" }) do
+      local dialog = self:GetChild(pn .. "ACDialog")
+      if dialog then
+        dialog:playcommand("ResetDialogState")
+      end
     end
 
     local p1Text = self:GetChild("ACSubmitP1")
@@ -2365,10 +2279,17 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       end
 
       local players = GAMESTATE:GetHumanPlayers()
+
+      -- Determine eligibility for everyone first, and register anyone we're about to submit
+      -- for as "pending a response" (self.pendingResultResponses) BEFORE firing any requests --
+      -- see the matching comment in ScreenEvaluationStage's ModuleCommand for why (a fast
+      -- response for the first player could otherwise be processed before the loop even
+      -- reaches the second player).
+      local toSubmit = {}
       for _, player in ipairs(players) do
         local pn = ToEnumShortString(player)
         local pendingLabel = (pn == "P1") and p1Pending or p2Pending
-        
+
         -- Show initial pending count for this player
         if ENABLE_PENDING_SCORES then
           local pendingCount = countPendingScores(player)
@@ -2377,7 +2298,7 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
             pendingLabel:diffusecolor(pendingLabelColor(pendingCount))
           end
         end
-        
+
         local profileCfg = readApiKey(player)
         -- Ignore the course restriction for nonstop; reuse other checks.
         local eligibility = ArrowCloud.isEligible(player,
@@ -2385,16 +2306,9 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
 
         local apiKey = profileCfg.apiKey
         if eligibility.ok and apiKey ~= nil and apiKey ~= "" then
-          local pn = ToEnumShortString(player)
-          local label = (pn == "P1") and p1Text or p2Text
-          if label then label:settext("Arrow Cloud: submitting…") end
-          self.waiting[pn] = true
-          local data = buildCourseResultData(player, style)
-          local course = GAMESTATE:GetCurrentCourse()
-          local hash = BinaryToHex(CRYPTMAN:SHA1File(course:GetCourseDir())):sub(1, 16)
-          sendScoreData(data, apiKey, hash, player)
+          self.pendingResultResponses[pn] = true
+          toSubmit[#toSubmit + 1] = { player = player, pn = pn, apiKey = apiKey }
         else
-          local pn = ToEnumShortString(player)
           if apiKey ~= nil and not eligibility.ok then
             local label = (pn == "P1") and p1Text or p2Text
             if label then label:settext("❌ Arrow Cloud") end
@@ -2405,10 +2319,30 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
           end
         end
       end
+
+      for _, sub in ipairs(toSubmit) do
+        local pn = sub.pn
+        local player = sub.player
+        local label = (pn == "P1") and p1Text or p2Text
+        if label then label:settext("Arrow Cloud: submitting…") end
+        self.waiting[pn] = true
+        local data = buildCourseResultData(player, style)
+        local course = GAMESTATE:GetCurrentCourse()
+        local hash = BinaryToHex(CRYPTMAN:SHA1File(course:GetCourseDir())):sub(1, 16)
+        sendScoreData(data, sub.apiKey, hash, player)
+      end
     end
 
     -- After normal submissions, retry pending scores
     self:sleep(1):queuecommand("RetryPending")
+    -- Safety net: if some response never comes back (dropped connection, etc.),
+    -- don't leave a player who DID get a response stuck waiting forever.
+    self:sleep(15):queuecommand("ForceShowResultDialogs")
+  end,
+
+  ForceShowResultDialogsCommand = function(self)
+    if not self.armed then return end
+    tryShowResultDialogs(self, true)
   end,
 
   RetryPendingCommand = function(self)
@@ -2449,6 +2383,7 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
 
   ArrowCloudSubmitResultMessageCommand = function(self, params)
     if not params or not params.player then return end
+    if not self.armed then return end
     local pn = params.player
     local label = self:GetChild(pn == "P1" and "ACSubmitP1" or "ACSubmitP2")
     local errLabel = self:GetChild(pn == "P1" and "ACErrorP1" or "ACErrorP2")
@@ -2479,20 +2414,26 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
 
       self.waiting[pn] = false
     end
-    -- Show dialog only if we have valid response data with eventLeaderboards
-    -- Skip dialog in versus mode (two players) since each gets separate responses
-    local players = GAMESTATE:GetHumanPlayers()
-    if not self.dialogShown and params.responseData and params.responseData.eventLeaderboards and #players == 1 then
-      self.dialogShown = true
-      local dialog = self:GetChild("ACDialog")
-      if dialog then
-        dialog:playcommand("ShowDialog", { responseData = params.responseData })
-      end
+    -- Download this player's result images (if any), but don't show anything yet --
+    -- wait until every submitting player's response has come in (see tryShowResultDialogs)
+    -- so the final single-vs-both layout is known before anything is shown, and no dialog
+    -- ever has to visibly move after first appearing.
+    if params.responseData and params.responseData.resultImages and #params.responseData.resultImages > 0 then
+      local player = (pn == "P1") and PLAYER_1 or PLAYER_2
+      downloadResultImages(params.responseData.resultImages, player, function(paths)
+        self.pendingResultImages[pn] = paths
+        self.pendingResultResponses[pn] = nil
+        tryShowResultDialogs(self)
+      end)
+    else
+      self.pendingResultResponses[pn] = nil
+      tryShowResultDialogs(self)
     end
   end,
 
   -- Handle pending scores at capacity
   ArrowCloudPendingFullMessageCommand = function(self, params)
+    if not self.armed then return end
     if not params or not params.player then return end
     local pn = params.player
     local pendingLabel = self:GetChild(pn == "P1" and "ACPendingP1" or "ACPendingP2")
@@ -2502,12 +2443,95 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
     end
   end,
 
+  -- Route Back/Start/Select/MenuLeft/MenuRight to whichever player's result-image
+  -- dialog is currently visible. There is no per-player input-redirection primitive
+  -- in this engine, so redirection covers both players (same as EventOverlay/
+  -- ACLoginModal elsewhere in this file) while either dialog is open; each event is
+  -- still scoped to the correct dialog instance via event.PlayerNumber.
+  DirectInputToACResultDialogCommand = function(self)
+    local top = SCREENMAN:GetTopScreen()
+    if not top then return end
+
+    -- Suppress the Evaluation screen's own pane-cycling InputHandler while we're up --
+    -- set_input_redirected alone doesn't stop it (it only gates native input, not Lua
+    -- callbacks), so without this MenuLeft/MenuRight would also cycle the panes behind us.
+    local overlay = top:GetChild("Overlay")
+    local evalCommon = overlay and overlay:GetChild("ScreenEval Common")
+    if evalCommon then
+      evalCommon:queuecommand("DirectInputToACResultDialog")
+    end
+
+    if self.resultDialogInputHandler then return end
+
+    self.resultDialogInputHandler = function(event)
+      if not event or not event.PlayerNumber then return false end
+      if event.type ~= "InputEventType_FirstPress" then return false end
+      if not self.resultDialogVisible.P1 and not self.resultDialogVisible.P2 then return false end
+
+      local gbtn = event.GameButton
+
+      -- Either player closes both dialogs at once, regardless of whose is visible.
+      if gbtn == "Back" or gbtn == "Start" or gbtn == "Select" then
+        for _, pn in ipairs({ "P1", "P2" }) do
+          if self.resultDialogVisible[pn] then
+            local dlg = self:GetChild(pn .. "ACDialog")
+            if dlg then dlg:queuecommand("Hide") end
+            self.resultDialogVisible[pn] = false
+          end
+        end
+        local dim = self:GetChild("ResultDialogDim")
+        if dim then dim:visible(false) end
+        self:playcommand("DirectInputToEngineFromResultDialog")
+        return true
+      end
+
+      -- Paging stays scoped to the pressing player's own dialog.
+      local eventPn = ToEnumShortString(event.PlayerNumber)
+      if not self.resultDialogVisible[eventPn] then return false end
+
+      local dialog = self:GetChild(eventPn .. "ACDialog")
+      if not dialog then return false end
+
+      if gbtn == "MenuRight" then
+        dialog:queuecommand("NextImage")
+        return true
+      elseif gbtn == "MenuLeft" then
+        dialog:queuecommand("PrevImage")
+        return true
+      end
+
+      return false
+    end
+
+    top:AddInputCallback(self.resultDialogInputHandler)
+  end,
+
+  DirectInputToEngineFromResultDialogCommand = function(self)
+    local top = SCREENMAN:GetTopScreen()
+    if top and self.resultDialogInputHandler then
+      top:RemoveInputCallback(self.resultDialogInputHandler)
+    end
+    self.resultDialogInputHandler = nil
+
+    local overlay = top and top:GetChild("Overlay")
+    local evalCommon = overlay and overlay:GetChild("ScreenEval Common")
+    if evalCommon then
+      evalCommon:queuecommand("DirectInputFromACResultDialog")
+    end
+  end,
+
   -- Clean up dialog state when leaving the screen
   OffCommand = function(self)
-    local dialog = self:GetChild("ACDialog")
-    if dialog then
-      dialog:playcommand("ResetDialogState")
+    self.armed = false
+    for _, pn in ipairs({ "P1", "P2" }) do
+      local dialog = self:GetChild(pn .. "ACDialog")
+      if dialog then
+        dialog:playcommand("ResetDialogState")
+      end
     end
+    self:playcommand("DirectInputToEngineFromResultDialog")
+    local dim = self:GetChild("ResultDialogDim")
+    if dim then dim:visible(false) end
   end,
 
   LoadFont("Common Normal") .. {
@@ -2557,8 +2581,19 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
     end
   },
 
-  -- dialog overlay used after submission
-  createACDialogActor("ACDialog")
+  -- Single shared full-screen dim quad behind both per-player dialogs (see
+  -- tryShowResultDialogs) -- avoids stacking two dim quads if both were ever
+  -- visible at once.
+  Def.Quad {
+    Name = "ResultDialogDim",
+    InitCommand = function(self)
+      self:FullScreen():diffuse(0, 0, 0, 0.75):draworder(199):visible(false)
+    end
+  },
+
+  -- per-player dialog overlays used after submission
+  createACResultImageDialogActor("P1ACDialog", PLAYER_1),
+  createACResultImageDialogActor("P2ACDialog", PLAYER_2)
 }
 
 moduleRegistration["ScreenSelectMusic"] = Def.ActorFrame {
