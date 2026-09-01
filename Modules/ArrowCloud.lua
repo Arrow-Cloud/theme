@@ -2033,26 +2033,47 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
   -- dialog is currently visible. There is no per-player input-redirection primitive
   -- in this engine, so redirection covers both players (same as EventOverlay/
   -- ACLoginModal elsewhere in this file) while either dialog is open; each event is
-  -- still scoped to the correct dialog instance via event.PlayerNumber.
+  -- still scoped to the correct dialog instance via event.PlayerNumber. Deliberately
+  -- self-contained -- no dependency on any other theme file -- so this module keeps working
+  -- if dropped into a different theme that has no equivalent of this one's pane-cycling/
+  -- event-overlay input handling to coordinate with.
   DirectInputToACResultDialogCommand = function(self)
     local top = SCREENMAN:GetTopScreen()
     if not top then return end
 
-    -- Suppress the Evaluation screen's own pane-cycling InputHandler while we're up --
-    -- set_input_redirected alone doesn't stop it (it only gates native input, not Lua
-    -- callbacks), so without this MenuLeft/MenuRight would also cycle the panes behind us.
-    local overlay = top:GetChild("Overlay")
-    local evalCommon = overlay and overlay:GetChild("ScreenEval Common")
-    if evalCommon then
-      evalCommon:queuecommand("DirectInputToACResultDialog")
+    for player in ivalues(PlayerNumber) do
+      SCREENMAN:set_input_redirected(player, true)
     end
 
     if self.resultDialogInputHandler then return end
 
     self.resultDialogInputHandler = function(event)
+      if not (self.resultDialogVisible.P1 or self.resultDialogVisible.P2) then return false end
+
+      -- Re-assert input redirection on every event while a dialog is open, not just when
+      -- first showing it. set_input_redirected only gates this engine's own native "advance
+      -- past this screen" handling for a given input event -- confirmed via engine source
+      -- (ScreenManager::Input checks get_input_redirected before calling the native
+      -- Screen::Input path, then always calls PassInputToLua regardless) -- it does NOT stop
+      -- other registered Lua input callbacks (e.g. a host theme's own pane-cycling or event-
+      -- overlay handlers) from also reacting to the same event and flipping redirection back
+      -- off themselves. Screen::PassInputToLua *does* stop calling further callbacks once one
+      -- returns true, but the iteration order is keyed by each Lua closure's raw memory
+      -- address (std::map<const void*, LuaReference>), which is unpredictable and outside
+      -- this module's control -- so this can't rely on running (or "winning") first. What it
+      -- CAN rely on: every callback for a given event still runs synchronously within that
+      -- same pass, so unconditionally restoring redirection here guarantees it's back on
+      -- before the *next* event (e.g. this same button's release) is evaluated, regardless of
+      -- what any other callback just did to it. (One residual, module-only limitation: this
+      -- can't stop another callback's own side effects, like a pane silently cycling behind
+      -- our fully-opaque dialog -- only that a dismiss press can no longer also fall through
+      -- and exit the underlying screen.)
+      for player in ivalues(PlayerNumber) do
+        SCREENMAN:set_input_redirected(player, true)
+      end
+
       if not event or not event.PlayerNumber then return false end
       if event.type ~= "InputEventType_FirstPress" then return false end
-      if not self.resultDialogVisible.P1 and not self.resultDialogVisible.P2 then return false end
 
       local gbtn = event.GameButton
 
@@ -2098,11 +2119,8 @@ moduleRegistration["ScreenEvaluationStage"] = Def.ActorFrame {
       top:RemoveInputCallback(self.resultDialogInputHandler)
     end
     self.resultDialogInputHandler = nil
-
-    local overlay = top and top:GetChild("Overlay")
-    local evalCommon = overlay and overlay:GetChild("ScreenEval Common")
-    if evalCommon then
-      evalCommon:queuecommand("DirectInputFromACResultDialog")
+    for player in ivalues(PlayerNumber) do
+      SCREENMAN:set_input_redirected(player, false)
     end
   end,
 
@@ -2451,26 +2469,47 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
   -- dialog is currently visible. There is no per-player input-redirection primitive
   -- in this engine, so redirection covers both players (same as EventOverlay/
   -- ACLoginModal elsewhere in this file) while either dialog is open; each event is
-  -- still scoped to the correct dialog instance via event.PlayerNumber.
+  -- still scoped to the correct dialog instance via event.PlayerNumber. Deliberately
+  -- self-contained -- no dependency on any other theme file -- so this module keeps working
+  -- if dropped into a different theme that has no equivalent of this one's pane-cycling/
+  -- event-overlay input handling to coordinate with.
   DirectInputToACResultDialogCommand = function(self)
     local top = SCREENMAN:GetTopScreen()
     if not top then return end
 
-    -- Suppress the Evaluation screen's own pane-cycling InputHandler while we're up --
-    -- set_input_redirected alone doesn't stop it (it only gates native input, not Lua
-    -- callbacks), so without this MenuLeft/MenuRight would also cycle the panes behind us.
-    local overlay = top:GetChild("Overlay")
-    local evalCommon = overlay and overlay:GetChild("ScreenEval Common")
-    if evalCommon then
-      evalCommon:queuecommand("DirectInputToACResultDialog")
+    for player in ivalues(PlayerNumber) do
+      SCREENMAN:set_input_redirected(player, true)
     end
 
     if self.resultDialogInputHandler then return end
 
     self.resultDialogInputHandler = function(event)
+      if not (self.resultDialogVisible.P1 or self.resultDialogVisible.P2) then return false end
+
+      -- Re-assert input redirection on every event while a dialog is open, not just when
+      -- first showing it. set_input_redirected only gates this engine's own native "advance
+      -- past this screen" handling for a given input event -- confirmed via engine source
+      -- (ScreenManager::Input checks get_input_redirected before calling the native
+      -- Screen::Input path, then always calls PassInputToLua regardless) -- it does NOT stop
+      -- other registered Lua input callbacks (e.g. a host theme's own pane-cycling or event-
+      -- overlay handlers) from also reacting to the same event and flipping redirection back
+      -- off themselves. Screen::PassInputToLua *does* stop calling further callbacks once one
+      -- returns true, but the iteration order is keyed by each Lua closure's raw memory
+      -- address (std::map<const void*, LuaReference>), which is unpredictable and outside
+      -- this module's control -- so this can't rely on running (or "winning") first. What it
+      -- CAN rely on: every callback for a given event still runs synchronously within that
+      -- same pass, so unconditionally restoring redirection here guarantees it's back on
+      -- before the *next* event (e.g. this same button's release) is evaluated, regardless of
+      -- what any other callback just did to it. (One residual, module-only limitation: this
+      -- can't stop another callback's own side effects, like a pane silently cycling behind
+      -- our fully-opaque dialog -- only that a dismiss press can no longer also fall through
+      -- and exit the underlying screen.)
+      for player in ivalues(PlayerNumber) do
+        SCREENMAN:set_input_redirected(player, true)
+      end
+
       if not event or not event.PlayerNumber then return false end
       if event.type ~= "InputEventType_FirstPress" then return false end
-      if not self.resultDialogVisible.P1 and not self.resultDialogVisible.P2 then return false end
 
       local gbtn = event.GameButton
 
@@ -2516,11 +2555,8 @@ moduleRegistration["ScreenEvaluationNonstop"] = Def.ActorFrame {
       top:RemoveInputCallback(self.resultDialogInputHandler)
     end
     self.resultDialogInputHandler = nil
-
-    local overlay = top and top:GetChild("Overlay")
-    local evalCommon = overlay and overlay:GetChild("ScreenEval Common")
-    if evalCommon then
-      evalCommon:queuecommand("DirectInputFromACResultDialog")
+    for player in ivalues(PlayerNumber) do
+      SCREENMAN:set_input_redirected(player, false)
     end
   end,
 

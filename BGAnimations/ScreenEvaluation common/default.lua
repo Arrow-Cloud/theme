@@ -36,25 +36,6 @@ if SL.Global.GameMode ~= "Casual" then
 			SCREENMAN:set_input_redirected(player, true)
 		end
 	end
-	-- Arrow Cloud's post-submission result-image dialog (Modules/ArrowCloud.lua) needs the same
-	-- "stop the pane-cycling InputHandler from also reacting" treatment ITL/SRPG's EventOverlay
-	-- gets above, but can't reuse DirectInputToEventOverlayHandler: EventOverlayInputHandler
-	-- (Shared/EventInputHandler.lua) unconditionally hides EventOverlay and calls
-	-- DirectInputToEngine on any Start/Back press, which would rip Arrow Cloud's own dialog
-	-- state out from under it. InputHandler is local to this file, so it can only be removed
-	-- from here.
-	t.DirectInputToACResultDialogCommand=function(self)
-		SCREENMAN:GetTopScreen():RemoveInputCallback(InputHandler)
-		for player in ivalues(PlayerNumber) do
-			SCREENMAN:set_input_redirected(player, true)
-		end
-	end
-	t.DirectInputFromACResultDialogCommand=function(self)
-		SCREENMAN:GetTopScreen():AddInputCallback(InputHandler)
-		for player in ivalues(PlayerNumber) do
-			SCREENMAN:set_input_redirected(player, false)
-		end
-	end
 else
 	t.OnCommand=function(self)
 		PROFILEMAN:SaveMachineProfile()
